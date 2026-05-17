@@ -24,32 +24,36 @@ The project follows strict Clean Architecture with dependency rules enforced at 
 
 ```
 nixacp-gateway/
-├── Cargo.toml                  # workspace root
+├── Cargo.toml                  # workspace root (rust-version = "1.86")
 ├── gateway.toml                # runtime config (Ollama URL, log format, models)
+├── .github/workflows/ci.yaml   # CI: fmt, clippy, test on ubuntu + macos
 ├── crates/
 │   ├── domain/                 # pure domain — zero external I/O dependencies
 │   │   └── src/
-│   │       ├── entities/       # Model, Message, ConversationRequest, StreamChunk
-│   │       └── ports/          # traits: LlmBackend, ToolRuntime, Router
+│   │       ├── entities/       # Model, Message, ConversationRequest, StreamChunk, Tool*
+│   │       └── ports/          # traits: LlmBackend, ToolRuntime, TokenCounter, ContextCompressor
 │   ├── application/            # use cases, depends only on domain
 │   │   └── src/
-│   │       ├── chat.rs         # ChatService (Phase 2 adds prompt pipeline here)
-│   │       ├── routing/        # multi-model router (Phase 2+)
-│   │       ├── reflection/     # retry-on-failure loop (Phase 4)
-│   │       ├── compression/    # context window management (Phase 2)
-│   │       └── prompt/         # prompt optimization pipeline (Phase 2)
+│   │       ├── chat.rs         # ChatService — prompt pipeline + compression + backend call
+│   │       ├── tool_loop/      # ToolLoopOrchestrator — detect→dispatch→inject→resubmit (max 5)
+│   │       ├── compression/    # CompressionService, SlidingWindowCompressor
+│   │       ├── prompt/         # PromptPipeline, SystemPromptBuilder, ModelQuirksTransformer
+│   │       ├── routing/        # multi-model router (Phase 4+)
+│   │       └── reflection/     # retry-on-failure loop (Phase 4)
 │   ├── infrastructure/         # implements domain ports
 │   │   └── src/
 │   │       ├── ollama/         # OllamaClient — LlmBackend impl, NDJSON stream
+│   │       ├── token_counter/  # TiktokenCounter — cl100k_base, OnceLock BPE init
 │   │       ├── openai/         # OpenAI-compat passthrough (Phase 7)
 │   │       ├── acp/            # ACP protocol adapter (Phase 5)
-│   │       └── tools/          # extensible tool runtime (Phase 3)
+│   │       └── tools/          # ToolRegistry, ToolExecutor, ToolCallNormalizer,
+│   │                           #   FileReadTool, SearchTool
 │   ├── api/                    # HTTP server, Axum router
 │   │   └── src/
-│   │       ├── openai/         # /v1/chat/completions, /v1/models
+│   │       ├── openai/         # /v1/chat/completions (tools + streaming), /v1/models
 │   │       ├── middleware/     # request/response logging (StdAppLog)
 │   │       ├── acp/            # ACP endpoints (Phase 5)
-│   │       ├── state.rs        # AppState, Config, LogConfig
+│   │       ├── state.rs        # AppState, Config, LogConfig; wires ChatService + ToolLoopOrchestrator
 │   │       ├── error.rs        # AppError → OpenAI error JSON
 │   │       └── server.rs       # build_router
 │   └── logging/                # Standard Application Log v1.0 types + subscriber
@@ -102,14 +106,16 @@ cargo test --workspace
 # Run tests for a specific crate
 cargo test -p domain
 cargo test -p application
+cargo test -p infrastructure
+cargo test -p api
 
 # Run a single test by name
-cargo test -p application routing::tests::test_model_selection
+cargo test -p application tool_loop::tests::single_tool_call_one_pass
 
-# Lint
-cargo clippy --workspace -- -D warnings
+# Lint (CI uses -D warnings — fix all warnings before pushing)
+cargo clippy --workspace --all-targets -- -D warnings
 
-# Format
+# Format (CI enforces this; run before every commit)
 cargo fmt --all
 
 # Check without building
@@ -129,8 +135,8 @@ cargo check --workspace
 - Live in `crates/<crate>/tests/` (Rust integration test convention).
 - Use `wiremock` to mock Ollama HTTP endpoints — never require a live Ollama process in CI.
 - Test full request/response cycles through the Axum router using `axum::http::Request` + `tower::ServiceExt::oneshot`.
-- One test file per feature area: `tests/streaming.rs`, `tests/tool_calls.rs`, `tests/acp_session.rs`, `tests/reflection.rs`.
-- Run: `cargo test -p api --test streaming`
+- One test file per feature area: `tests/tool_calls.rs` ✅, `tests/streaming.rs`, `tests/acp_session.rs`, `tests/reflection.rs`.
+- Run: `cargo test -p api --test tool_calls`
 
 ### Benchmark tests
 - Live in `crates/<crate>/benches/` using `criterion`.
@@ -235,9 +241,9 @@ Override at runtime: `GATEWAY_LOG_FORMAT=text GATEWAY_LOG_LEVEL=debug cargo run`
 Development is organized in 7 phases over 6 months. See `docs/ROADMAP.md` for the full roadmap including phase deliverables, exit criteria, and the definition of done.
 
 **Phase summary:**
-1. Minimal streaming proxy (Weeks 1–3)
-2. Prompt pipeline + compression (Weeks 4–5)
-3. Tool calls (Weeks 6–7)
+1. Minimal streaming proxy (Weeks 1–3) ✅ DONE
+2. Prompt pipeline + compression (Weeks 4–5) ✅ DONE
+3. Tool calls (Weeks 6–7) ✅ DONE
 4. Reflection/retry + cancellation hardening (Weeks 8–9)
 5. ACP protocol / Zed integration (Weeks 10–11)
 6. Observability + performance hot path (Weeks 12–13)
