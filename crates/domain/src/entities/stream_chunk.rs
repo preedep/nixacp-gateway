@@ -29,11 +29,17 @@ pub struct StreamChunk {
 
 impl StreamChunk {
     pub fn delta(text: impl Into<String>) -> Self {
-        Self { delta: text.into(), finish_reason: None }
+        Self {
+            delta: text.into(),
+            finish_reason: None,
+        }
     }
 
     pub fn stop() -> Self {
-        Self { delta: String::new(), finish_reason: Some(FinishReason::Stop) }
+        Self {
+            delta: String::new(),
+            finish_reason: Some(FinishReason::Stop),
+        }
     }
 
     pub fn is_terminal(&self) -> bool {

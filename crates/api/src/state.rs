@@ -114,6 +114,11 @@ impl AppState {
             app_id: config.log.app_id.clone(),
             app_version: config.log.app_version.clone(),
         };
-        Ok(Self { config: Arc::new(config), chat, tool_loop, log_ctx })
+        Ok(Self {
+            config: Arc::new(config),
+            chat,
+            tool_loop,
+            log_ctx,
+        })
     }
 }

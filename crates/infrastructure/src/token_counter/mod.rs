@@ -47,7 +47,11 @@ impl TokenCounter for TiktokenCounter {
     fn count_messages(&self, messages: &[Message]) -> u32 {
         // 4 overhead tokens per message (role + content wrapper + separators) and
         // 2 reply-priming tokens — matches OpenAI's token counting reference.
-        messages.iter().map(|m| 4 + message_token_count(m)).sum::<u32>() + 2
+        messages
+            .iter()
+            .map(|m| 4 + message_token_count(m))
+            .sum::<u32>()
+            + 2
     }
 
     fn count_str(&self, text: &str) -> u32 {

@@ -48,11 +48,13 @@ impl ContextCompressor for SlidingWindowCompressor {
     }
 }
 
-fn split_messages(
-    mut messages: Vec<Message>,
-) -> (Vec<Message>, Vec<Message>, Message) {
+fn split_messages(mut messages: Vec<Message>) -> (Vec<Message>, Vec<Message>, Message) {
     let last = messages.pop().expect("messages must not be empty");
-    let system = if messages.first().map(|m| m.role == Role::System).unwrap_or(false) {
+    let system = if messages
+        .first()
+        .map(|m| m.role == Role::System)
+        .unwrap_or(false)
+    {
         vec![messages.remove(0)]
     } else {
         vec![]

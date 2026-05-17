@@ -16,7 +16,9 @@ pub struct FileReadTool {
 
 impl FileReadTool {
     pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
-        Self { workspace_root: workspace_root.into() }
+        Self {
+            workspace_root: workspace_root.into(),
+        }
     }
 }
 
@@ -27,7 +29,9 @@ impl ToolRuntime for FileReadTool {
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {
-        let args = call.function.parse_arguments()
+        let args = call
+            .function
+            .parse_arguments()
             .map_err(|e| ToolError::InvalidArguments(e.to_string()))?;
 
         let path_str = args["path"]
@@ -63,9 +67,9 @@ impl ToolRuntime for FileReadTool {
             )));
         }
 
-        let contents = fs::read_to_string(&resolved).await.map_err(|e| {
-            ToolError::ExecutionFailed(format!("read failed: {e}"))
-        })?;
+        let contents = fs::read_to_string(&resolved)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("read failed: {e}")))?;
 
         Ok(ToolResult::ok(call.id.clone(), contents))
     }
@@ -150,7 +154,10 @@ mod tests {
         let (_dir, tool) = temp_workspace();
         let call = ToolCall::new("call_bad", "file_read", "{}");
         let err = tool.execute(&call).await.unwrap_err();
-        assert!(matches!(err, ToolError::InvalidArguments(_)), "got: {err:?}");
+        assert!(
+            matches!(err, ToolError::InvalidArguments(_)),
+            "got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -158,7 +165,10 @@ mod tests {
         let (_dir, tool) = temp_workspace();
         let call = ToolCall::new("call_bad2", "file_read", "not json");
         let err = tool.execute(&call).await.unwrap_err();
-        assert!(matches!(err, ToolError::InvalidArguments(_)), "got: {err:?}");
+        assert!(
+            matches!(err, ToolError::InvalidArguments(_)),
+            "got: {err:?}"
+        );
     }
 
     #[tokio::test]

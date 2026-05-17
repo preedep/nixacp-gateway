@@ -25,7 +25,10 @@ use api::state::{AppState, Config, LogConfig, OllamaConfig, ServerConfig};
 
 fn test_config(ollama_url: &str) -> Config {
     Config {
-        server: ServerConfig { host: "127.0.0.1".into(), port: 3000 },
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 3000,
+        },
         ollama: OllamaConfig {
             url: ollama_url.to_owned(),
             default_model: "test-model".into(),
@@ -123,8 +126,10 @@ async fn three_turn_tool_loop_returns_final_answer() {
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(ollama_tool_call_body("read_file", json!({"path": "src/main.rs"}))),
+            ResponseTemplate::new(200).set_body_string(ollama_tool_call_body(
+                "read_file",
+                json!({"path": "src/main.rs"}),
+            )),
         )
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -145,8 +150,9 @@ async fn three_turn_tool_loop_returns_final_answer() {
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(ollama_plain_body("The main file defines the server entry point.")),
+            ResponseTemplate::new(200).set_body_string(ollama_plain_body(
+                "The main file defines the server entry point.",
+            )),
         )
         .mount(&mock_server)
         .await;
@@ -193,7 +199,12 @@ async fn three_turn_tool_loop_returns_final_answer() {
 
     // Verify the mock server received exactly 3 calls (one per tool-loop pass).
     let received = mock_server.received_requests().await.unwrap();
-    assert_eq!(received.len(), 3, "expected 3 Ollama calls (2 tool passes + 1 final); got {}", received.len());
+    assert_eq!(
+        received.len(),
+        3,
+        "expected 3 Ollama calls (2 tool passes + 1 final); got {}",
+        received.len()
+    );
 }
 
 #[tokio::test]
@@ -203,8 +214,7 @@ async fn request_without_tools_does_not_use_tool_loop() {
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(ollama_plain_body("simple answer")),
+            ResponseTemplate::new(200).set_body_string(ollama_plain_body("simple answer")),
         )
         .mount(&mock_server)
         .await;
@@ -230,10 +240,17 @@ async fn request_without_tools_does_not_use_tool_loop() {
 
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(json["choices"][0]["message"]["content"].as_str(), Some("simple answer"));
+    assert_eq!(
+        json["choices"][0]["message"]["content"].as_str(),
+        Some("simple answer")
+    );
 
     let received = mock_server.received_requests().await.unwrap();
-    assert_eq!(received.len(), 1, "non-tool request must make exactly 1 Ollama call");
+    assert_eq!(
+        received.len(),
+        1,
+        "non-tool request must make exactly 1 Ollama call"
+    );
 }
 
 #[tokio::test]

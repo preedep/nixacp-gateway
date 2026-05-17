@@ -29,7 +29,9 @@ impl ToolRuntime for SearchTool {
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {
-        let args = call.function.parse_arguments()
+        let args = call
+            .function
+            .parse_arguments()
             .map_err(|e| ToolError::InvalidArguments(e.to_string()))?;
 
         let query = args["query"]
@@ -113,7 +115,10 @@ mod tests {
         let (_dir, tool) = setup("content");
         let bad_call = ToolCall::new("cb", "search", r#"{}"#);
         let err = tool.execute(&bad_call).await.unwrap_err();
-        assert!(matches!(err, ToolError::InvalidArguments(_)), "got: {err:?}");
+        assert!(
+            matches!(err, ToolError::InvalidArguments(_)),
+            "got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -121,7 +126,10 @@ mod tests {
         let (_dir, tool) = setup("content");
         let bad_call = ToolCall::new("cb2", "search", "not json");
         let err = tool.execute(&bad_call).await.unwrap_err();
-        assert!(matches!(err, ToolError::InvalidArguments(_)), "got: {err:?}");
+        assert!(
+            matches!(err, ToolError::InvalidArguments(_)),
+            "got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -132,7 +140,10 @@ mod tests {
         std::fs::write(dir.path().join("other.txt"), "other content").unwrap();
 
         let tool = SearchTool::new(dir.path(), "rg");
-        let result = tool.execute(&call_with_path("target", "sub")).await.unwrap();
+        let result = tool
+            .execute(&call_with_path("target", "sub"))
+            .await
+            .unwrap();
         let out = result.content.as_str();
         assert!(out.contains("target line"), "output: {out}");
     }

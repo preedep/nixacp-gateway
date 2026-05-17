@@ -28,5 +28,8 @@ pub async fn list_models(State(state): State<Arc<AppState>>) -> Json<ModelListRe
             .collect()
     };
 
-    Json(ModelListResponse { object: "list", data })
+    Json(ModelListResponse {
+        object: "list",
+        data,
+    })
 }

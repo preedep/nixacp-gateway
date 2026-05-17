@@ -11,11 +11,16 @@ pub struct SystemPromptBuilder {
 
 impl SystemPromptBuilder {
     pub fn with_default(prompt: impl Into<String>) -> Self {
-        Self { default_system_prompt: Some(prompt.into()) }
+        Self {
+            default_system_prompt: Some(prompt.into()),
+        }
     }
 
     pub fn apply(&self, _model: &str, mut messages: Vec<Message>) -> Vec<Message> {
-        let has_system = messages.first().map(|m| m.role == Role::System).unwrap_or(false);
+        let has_system = messages
+            .first()
+            .map(|m| m.role == Role::System)
+            .unwrap_or(false);
         if !has_system {
             if let Some(ref prompt) = self.default_system_prompt {
                 messages.insert(0, Message::system(prompt.as_str()));

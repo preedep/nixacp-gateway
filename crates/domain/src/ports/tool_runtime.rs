@@ -30,7 +30,9 @@ mod tests {
         }
 
         async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {
-            let args = call.function.parse_arguments()
+            let args = call
+                .function
+                .parse_arguments()
                 .map_err(|e| ToolError::InvalidArguments(e.to_string()))?;
             let msg = args["message"].as_str().unwrap_or("").to_owned();
             Ok(ToolResult::ok(call.id.clone(), msg))

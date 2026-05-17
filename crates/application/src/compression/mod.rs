@@ -16,7 +16,10 @@ pub struct CompressionService {
 
 impl CompressionService {
     pub fn new(counter: Arc<dyn TokenCounter>, compressor: Arc<dyn ContextCompressor>) -> Self {
-        Self { counter, compressor }
+        Self {
+            counter,
+            compressor,
+        }
     }
 
     /// Returns messages trimmed to fit within `max_tokens`, or the original list
@@ -62,10 +65,7 @@ mod tests {
 
     #[test]
     fn no_compression_when_under_budget() {
-        let svc = CompressionService::new(
-            Arc::new(FakeCounter(10)),
-            Arc::new(FakeCompressor),
-        );
+        let svc = CompressionService::new(Arc::new(FakeCounter(10)), Arc::new(FakeCompressor));
         let msgs = vec![Message::user("a"), Message::user("b")];
         let out = svc.maybe_compress(msgs, 100);
         assert_eq!(out.len(), 2);
@@ -73,10 +73,7 @@ mod tests {
 
     #[test]
     fn compresses_when_over_budget() {
-        let svc = CompressionService::new(
-            Arc::new(FakeCounter(200)),
-            Arc::new(FakeCompressor),
-        );
+        let svc = CompressionService::new(Arc::new(FakeCounter(200)), Arc::new(FakeCompressor));
         let msgs = vec![Message::user("a"), Message::user("b")];
         let out = svc.maybe_compress(msgs, 100);
         assert_eq!(out.len(), 1);

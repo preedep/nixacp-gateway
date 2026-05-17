@@ -46,7 +46,10 @@ impl OllamaClient {
             .tcp_nodelay(true)
             .build()
             .context("failed to build reqwest client")?;
-        Ok(Self { http, config: Arc::new(config) })
+        Ok(Self {
+            http,
+            config: Arc::new(config),
+        })
     }
 
     fn chat_url(&self) -> String {
@@ -103,7 +106,10 @@ fn build_options(req: &ConversationRequest) -> Option<OllamaOptions> {
     if req.temperature.is_none() && req.max_tokens.is_none() {
         return None;
     }
-    Some(OllamaOptions { temperature: req.temperature, num_predict: req.max_tokens })
+    Some(OllamaOptions {
+        temperature: req.temperature,
+        num_predict: req.max_tokens,
+    })
 }
 
 fn log_req_ex(url: &str, model: &str, msg_count: usize) {
@@ -126,7 +132,11 @@ fn log_req_ex(url: &str, model: &str, msg_count: usize) {
 
 fn log_res_ex(url: &str, status: u32, elapsed_ms: u32) {
     StdAppLog::res_ex(
-        if status >= 500 { LogLevel::Error } else { LogLevel::Info },
+        if status >= 500 {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        },
         LogResponse {
             status_code: status,
             headers: HashMap::new(),
@@ -166,17 +176,27 @@ impl LlmBackend for OllamaClient {
         let status = response.status();
         // RES_EX_LOG is emitted here, before the error check, so the round-trip
         // time is always recorded even for error responses.
-        log_res_ex(&url, status.as_u16() as u32, start.elapsed().as_millis() as u32);
+        log_res_ex(
+            &url,
+            status.as_u16() as u32,
+            start.elapsed().as_millis() as u32,
+        );
 
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
-            return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
+            return Err(BackendError::Upstream {
+                status: status.as_u16(),
+                body: body_text,
+            });
         }
 
         Ok(stream::into_stream(response))
     }
 
-    async fn complete(&self, request: ConversationRequest) -> Result<ConversationResponse, BackendError> {
+    async fn complete(
+        &self,
+        request: ConversationRequest,
+    ) -> Result<ConversationResponse, BackendError> {
         let body = OllamaGenerateRequest {
             model: request.model.as_str().to_owned(),
             messages: domain_messages(&request),
@@ -199,11 +219,18 @@ impl LlmBackend for OllamaClient {
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
         let status = response.status();
-        log_res_ex(&url, status.as_u16() as u32, start.elapsed().as_millis() as u32);
+        log_res_ex(
+            &url,
+            status.as_u16() as u32,
+            start.elapsed().as_millis() as u32,
+        );
 
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
-            return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
+            return Err(BackendError::Upstream {
+                status: status.as_u16(),
+                body: body_text,
+            });
         }
 
         // Non-streaming: Ollama returns a single JSON object (the terminal
@@ -214,9 +241,8 @@ impl LlmBackend for OllamaClient {
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
-        let ollama_resp: crate::ollama::types::OllamaChatChunk =
-            serde_json::from_slice(&raw_bytes)
-                .map_err(|e| BackendError::StreamParse(e.to_string()))?;
+        let ollama_resp: crate::ollama::types::OllamaChatChunk = serde_json::from_slice(&raw_bytes)
+            .map_err(|e| BackendError::StreamParse(e.to_string()))?;
 
         let tool_calls = ToolCallNormalizer::normalize(&ollama_resp.message)?;
         let content = ollama_resp.message.content;
@@ -242,7 +268,10 @@ impl LlmBackend for OllamaClient {
         let status = response.status();
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
-            return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
+            return Err(BackendError::Upstream {
+                status: status.as_u16(),
+                body: body_text,
+            });
         }
 
         let tags: OllamaTagsResponse = response

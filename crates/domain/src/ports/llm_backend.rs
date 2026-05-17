@@ -29,7 +29,10 @@ pub type BackendStream = Pin<Box<dyn Stream<Item = Result<StreamChunk, BackendEr
 #[async_trait]
 pub trait LlmBackend: Send + Sync {
     async fn stream(&self, request: ConversationRequest) -> Result<BackendStream, BackendError>;
-    async fn complete(&self, request: ConversationRequest) -> Result<ConversationResponse, BackendError>;
+    async fn complete(
+        &self,
+        request: ConversationRequest,
+    ) -> Result<ConversationResponse, BackendError>;
     async fn list_models(&self) -> Result<Vec<ModelDescriptor>, BackendError>;
     async fn health_check(&self) -> Result<(), BackendError>;
 }
@@ -59,7 +62,10 @@ mod tests {
             Ok(Box::pin(futures_util::stream::iter(chunks)))
         }
 
-        async fn complete(&self, req: ConversationRequest) -> Result<ConversationResponse, BackendError> {
+        async fn complete(
+            &self,
+            req: ConversationRequest,
+        ) -> Result<ConversationResponse, BackendError> {
             let mut stream = self.stream(req.clone()).await?;
             let mut content = String::new();
             while let Some(chunk) = stream.next().await {

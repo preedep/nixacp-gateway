@@ -25,7 +25,12 @@ impl ChatService {
         compression: CompressionService,
         counter: Arc<dyn TokenCounter>,
     ) -> Self {
-        Self { backend, pipeline, compression, counter }
+        Self {
+            backend,
+            pipeline,
+            compression,
+            counter,
+        }
     }
 
     fn prepare(&self, mut req: ConversationRequest) -> ConversationRequest {

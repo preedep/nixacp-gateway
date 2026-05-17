@@ -14,7 +14,9 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        Self { tools: HashMap::new() }
+        Self {
+            tools: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, tool: Arc<dyn ToolRuntime>) {
@@ -62,7 +64,10 @@ mod tests {
 
     fn registry_with_echo() -> ToolRegistry {
         let mut reg = ToolRegistry::new();
-        reg.register(Arc::new(ConstTool { name: "echo", output: "pong" }));
+        reg.register(Arc::new(ConstTool {
+            name: "echo",
+            output: "pong",
+        }));
         reg
     }
 
@@ -98,8 +103,14 @@ mod tests {
     #[tokio::test]
     async fn later_registration_overwrites_earlier() {
         let mut reg = ToolRegistry::new();
-        reg.register(Arc::new(ConstTool { name: "tool", output: "first" }));
-        reg.register(Arc::new(ConstTool { name: "tool", output: "second" }));
+        reg.register(Arc::new(ConstTool {
+            name: "tool",
+            output: "first",
+        }));
+        reg.register(Arc::new(ConstTool {
+            name: "tool",
+            output: "second",
+        }));
         let call = ToolCall::new("id", "tool", "{}");
         let result = reg.execute(&call).await.unwrap();
         assert_eq!(result.content.as_str(), "second");

@@ -1,13 +1,13 @@
 use bytes::BytesMut;
-use futures_util::stream;
-use domain::ports::llm_backend::{BackendError, BackendStream};
 use domain::entities::stream_chunk::StreamChunk;
+use domain::ports::llm_backend::{BackendError, BackendStream};
+use futures_util::stream;
 
 use super::types::OllamaChatChunk;
 
 pub(crate) fn parse_ndjson_line(line: &[u8]) -> Result<StreamChunk, BackendError> {
-    let chunk: OllamaChatChunk = serde_json::from_slice(line)
-        .map_err(|e| BackendError::StreamParse(e.to_string()))?;
+    let chunk: OllamaChatChunk =
+        serde_json::from_slice(line).map_err(|e| BackendError::StreamParse(e.to_string()))?;
     if chunk.done {
         Ok(StreamChunk::stop())
     } else {

@@ -28,7 +28,10 @@ impl ToolLoopOrchestrator {
         Self { backend, tools }
     }
 
-    pub async fn run(&self, mut request: ConversationRequest) -> Result<ConversationResponse, ToolLoopError> {
+    pub async fn run(
+        &self,
+        mut request: ConversationRequest,
+    ) -> Result<ConversationResponse, ToolLoopError> {
         let mut last_response = None;
 
         for _ in 0..MAX_PASSES {
@@ -44,7 +47,11 @@ impl ToolLoopOrchestrator {
             // rather than aborting — the model sees every result and can recover.
             let mut dispatches = FuturesUnordered::new();
             for call in &tool_calls {
-                let runtime = self.tools.iter().find(|t| t.name() == call.function.name).cloned();
+                let runtime = self
+                    .tools
+                    .iter()
+                    .find(|t| t.name() == call.function.name)
+                    .cloned();
                 let call = call.clone();
                 dispatches.push(async move {
                     match runtime {
@@ -67,10 +74,15 @@ impl ToolLoopOrchestrator {
                 results.push(result);
             }
             results.sort_by_key(|r| {
-                tool_calls.iter().position(|c| c.id == r.tool_call_id).unwrap_or(usize::MAX)
+                tool_calls
+                    .iter()
+                    .position(|c| c.id == r.tool_call_id)
+                    .unwrap_or(usize::MAX)
             });
 
-            request.messages.push(Message::assistant_with_tool_calls(tool_calls));
+            request
+                .messages
+                .push(Message::assistant_with_tool_calls(tool_calls));
             for result in results {
                 request.messages.push(Message::tool_result(
                     result.tool_call_id,
@@ -113,13 +125,18 @@ mod tests {
 
     impl FakeBackend {
         fn new(responses: Vec<ConversationResponse>) -> Self {
-            Self { responses: Mutex::new(responses) }
+            Self {
+                responses: Mutex::new(responses),
+            }
         }
     }
 
     #[async_trait]
     impl LlmBackend for FakeBackend {
-        async fn complete(&self, _req: ConversationRequest) -> Result<ConversationResponse, BackendError> {
+        async fn complete(
+            &self,
+            _req: ConversationRequest,
+        ) -> Result<ConversationResponse, BackendError> {
             let mut q = self.responses.lock().unwrap();
             if q.len() > 1 {
                 Ok(q.remove(0))
@@ -129,7 +146,9 @@ mod tests {
         }
 
         async fn stream(&self, _req: ConversationRequest) -> Result<BackendStream, BackendError> {
-            Ok(Box::pin(futures_util::stream::empty::<Result<StreamChunk, BackendError>>()))
+            Ok(Box::pin(futures_util::stream::empty::<
+                Result<StreamChunk, BackendError>,
+            >()))
         }
 
         async fn list_models(&self) -> Result<Vec<ModelDescriptor>, BackendError> {
@@ -201,8 +220,10 @@ mod tests {
             tool_call_response(vec![call.clone()]),
             plain_response("file was read"),
         ]));
-        let tool: Arc<dyn ToolRuntime> =
-            Arc::new(FakeTool { tool_name: "read_file", output: "contents of a.rs" });
+        let tool: Arc<dyn ToolRuntime> = Arc::new(FakeTool {
+            tool_name: "read_file",
+            output: "contents of a.rs",
+        });
         let orch = ToolLoopOrchestrator::new(backend, vec![tool]);
 
         let resp = orch.run(base_request()).await.unwrap();
@@ -216,8 +237,10 @@ mod tests {
             // Only one entry — FakeBackend repeats it forever
             tool_call_response(vec![call]),
         ]));
-        let tool: Arc<dyn ToolRuntime> =
-            Arc::new(FakeTool { tool_name: "read_file", output: "ok" });
+        let tool: Arc<dyn ToolRuntime> = Arc::new(FakeTool {
+            tool_name: "read_file",
+            output: "ok",
+        });
         let orch = ToolLoopOrchestrator::new(backend, vec![tool]);
 
         // Must not error or hang — returns last tool-call response after MAX_PASSES
@@ -236,8 +259,14 @@ mod tests {
             plain_response("both done"),
         ]));
         let tools: Vec<Arc<dyn ToolRuntime>> = vec![
-            Arc::new(FakeTool { tool_name: "read_file", output: "file contents" }),
-            Arc::new(FakeTool { tool_name: "search", output: "search results" }),
+            Arc::new(FakeTool {
+                tool_name: "read_file",
+                output: "file contents",
+            }),
+            Arc::new(FakeTool {
+                tool_name: "search",
+                output: "search results",
+            }),
         ];
         let orch = ToolLoopOrchestrator::new(backend, tools);
 
@@ -262,7 +291,6 @@ mod tests {
 
     #[tokio::test]
     async fn tool_result_messages_appended_in_order() {
-
         // Capture the second request's messages to inspect ordering.
         use std::sync::atomic::{AtomicBool, Ordering};
         struct CapturingBackend {
@@ -272,7 +300,10 @@ mod tests {
 
         #[async_trait]
         impl LlmBackend for CapturingBackend {
-            async fn complete(&self, req: ConversationRequest) -> Result<ConversationResponse, BackendError> {
+            async fn complete(
+                &self,
+                req: ConversationRequest,
+            ) -> Result<ConversationResponse, BackendError> {
                 if self.first_call.swap(false, Ordering::SeqCst) {
                     Ok(tool_call_response(vec![
                         ToolCall::new("c1", "read_file", "{}"),
@@ -284,8 +315,13 @@ mod tests {
                 }
             }
 
-            async fn stream(&self, _req: ConversationRequest) -> Result<BackendStream, BackendError> {
-                Ok(Box::pin(futures_util::stream::empty::<Result<StreamChunk, BackendError>>()))
+            async fn stream(
+                &self,
+                _req: ConversationRequest,
+            ) -> Result<BackendStream, BackendError> {
+                Ok(Box::pin(futures_util::stream::empty::<
+                    Result<StreamChunk, BackendError>,
+                >()))
             }
 
             async fn list_models(&self) -> Result<Vec<ModelDescriptor>, BackendError> {
@@ -303,8 +339,14 @@ mod tests {
         });
 
         let tools: Vec<Arc<dyn ToolRuntime>> = vec![
-            Arc::new(FakeTool { tool_name: "read_file", output: "file" }),
-            Arc::new(FakeTool { tool_name: "search", output: "results" }),
+            Arc::new(FakeTool {
+                tool_name: "read_file",
+                output: "file",
+            }),
+            Arc::new(FakeTool {
+                tool_name: "search",
+                output: "results",
+            }),
         ];
         let orch = ToolLoopOrchestrator::new(capturing.clone(), tools);
         let _ = orch.run(base_request()).await.unwrap();

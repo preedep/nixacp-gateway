@@ -150,8 +150,14 @@ mod tests {
     fn tool_call_id_omitted_from_user_message_json() {
         let m = Message::user("hello");
         let v: serde_json::Value = serde_json::to_value(&m).unwrap();
-        assert!(v.get("tool_call_id").is_none(), "tool_call_id must be absent from user message JSON");
-        assert!(v.get("tool_calls").is_none(), "tool_calls must be absent from user message JSON");
+        assert!(
+            v.get("tool_call_id").is_none(),
+            "tool_call_id must be absent from user message JSON"
+        );
+        assert!(
+            v.get("tool_calls").is_none(),
+            "tool_calls must be absent from user message JSON"
+        );
     }
 
     #[test]

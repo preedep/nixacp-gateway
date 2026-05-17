@@ -50,7 +50,10 @@ pub struct ConversationResponse {
 
 impl ConversationResponse {
     pub fn is_tool_call(&self) -> bool {
-        self.tool_calls.as_ref().map(|v| !v.is_empty()).unwrap_or(false)
+        self.tool_calls
+            .as_ref()
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
     }
 }
 
@@ -72,9 +75,11 @@ mod tests {
     #[test]
     fn conversation_request_with_tools() {
         let mut req = ConversationRequest::new(ModelId::new("m"), vec![Message::user("hi")]);
-        req.tool_definitions = vec![
-            ToolDefinition::function("file_read", "Read a file", json!({})),
-        ];
+        req.tool_definitions = vec![ToolDefinition::function(
+            "file_read",
+            "Read a file",
+            json!({}),
+        )];
         assert!(req.has_tools());
     }
 
@@ -88,9 +93,11 @@ mod tests {
     #[test]
     fn conversation_request_serde_round_trip_with_tools() {
         let mut req = ConversationRequest::new(ModelId::new("qwen"), vec![Message::user("hi")]);
-        req.tool_definitions = vec![
-            ToolDefinition::function("search", "Search code", json!({ "type": "object" })),
-        ];
+        req.tool_definitions = vec![ToolDefinition::function(
+            "search",
+            "Search code",
+            json!({ "type": "object" }),
+        )];
         let json = serde_json::to_string(&req).unwrap();
         let back: ConversationRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.tool_definitions.len(), 1);

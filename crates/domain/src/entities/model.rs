@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::sync::Arc;
 
 /// Cheap-to-clone model identifier backed by `Arc<str>`.
 /// Uses String for serde to avoid needing the `rc` serde feature.

@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 use super::types::{
-    ApiToolCall, ApiToolDefinition, ApiFunctionCall, ChatCompletionChunk, ChatCompletionRequest,
+    ApiFunctionCall, ApiToolCall, ApiToolDefinition, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice, Usage,
 };
 
@@ -55,16 +55,17 @@ async fn tool_loop_response(
     domain_req: ConversationRequest,
     model: String,
 ) -> Result<Response, AppError> {
-    let resp = state
-        .tool_loop
-        .run(domain_req)
-        .await
-        .map_err(|e| match e {
-            application::tool_loop::ToolLoopError::Backend(be) => AppError::Backend(be),
-        })?;
+    let resp = state.tool_loop.run(domain_req).await.map_err(|e| match e {
+        application::tool_loop::ToolLoopError::Backend(be) => AppError::Backend(be),
+    })?;
 
     let id = format!("chatcmpl-{}", resp.id.simple());
-    let finish_reason = if resp.is_tool_call() { "tool_calls" } else { "stop" }.to_owned();
+    let finish_reason = if resp.is_tool_call() {
+        "tool_calls"
+    } else {
+        "stop"
+    }
+    .to_owned();
     let token_count = resp.content.split_whitespace().count() as u32;
 
     let message = if resp.is_tool_call() {
@@ -75,7 +76,10 @@ async fn tool_loop_response(
             .map(|c| ApiToolCall {
                 id: c.id,
                 kind: c.kind,
-                function: ApiFunctionCall { name: c.function.name, arguments: c.function.arguments },
+                function: ApiFunctionCall {
+                    name: c.function.name,
+                    arguments: c.function.arguments,
+                },
             })
             .collect();
         ChatMessage {
@@ -97,7 +101,11 @@ async fn tool_loop_response(
         id,
         object: "chat.completion",
         model,
-        choices: vec![CompletionChoice { index: 0, message, finish_reason }],
+        choices: vec![CompletionChoice {
+            index: 0,
+            message,
+            finish_reason,
+        }],
         usage: Usage {
             prompt_tokens: resp.prompt_tokens,
             completion_tokens: token_count,
@@ -128,7 +136,10 @@ async fn stream_response(
             model: model.clone(),
             choices: vec![ChunkChoice {
                 index: 0,
-                delta: ChunkDelta { role: Some("assistant".to_owned()), content: None },
+                delta: ChunkDelta {
+                    role: Some("assistant".to_owned()),
+                    content: None,
+                },
                 finish_reason: None,
             }],
         };
@@ -148,7 +159,10 @@ async fn stream_response(
                         model: model.clone(),
                         choices: vec![ChunkChoice {
                             index: 0,
-                            delta: ChunkDelta { role: None, content: None },
+                            delta: ChunkDelta {
+                                role: None,
+                                content: None,
+                            },
                             finish_reason: Some("stop".to_owned()),
                         }],
                     };
@@ -164,7 +178,10 @@ async fn stream_response(
                         model: model.clone(),
                         choices: vec![ChunkChoice {
                             index: 0,
-                            delta: ChunkDelta { role: None, content: Some(chunk.delta) },
+                            delta: ChunkDelta {
+                                role: None,
+                                content: Some(chunk.delta),
+                            },
                             finish_reason: None,
                         }],
                     };
@@ -227,14 +244,20 @@ fn build_tool_definitions(tools: &[ApiToolDefinition]) -> Vec<ToolDefinition> {
     tools
         .iter()
         .map(|t| {
-            ToolDefinition::function(&t.function.name, &t.function.description, t.function.parameters.clone())
+            ToolDefinition::function(
+                &t.function.name,
+                &t.function.description,
+                t.function.parameters.clone(),
+            )
         })
         .collect()
 }
 
 fn build_messages(req: &ChatCompletionRequest) -> Result<Vec<Message>, AppError> {
     if req.messages.is_empty() {
-        return Err(AppError::BadRequest("messages must not be empty".to_owned()));
+        return Err(AppError::BadRequest(
+            "messages must not be empty".to_owned(),
+        ));
     }
     Ok(req
         .messages
@@ -252,9 +275,7 @@ fn build_messages(req: &ChatCompletionRequest) -> Result<Vec<Message>, AppError>
                     Message::assistant(&m.content)
                 }
             }
-            "tool" => {
-                Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &m.content)
-            }
+            "tool" => Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &m.content),
             _ => Message::user(&m.content),
         })
         .collect())
@@ -265,7 +286,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    use super::super::types::{ApiToolDefinition, ApiFunctionDefinition, ApiToolCall, ApiFunctionCall, ChatMessage};
+    use super::super::types::{
+        ApiFunctionCall, ApiFunctionDefinition, ApiToolCall, ApiToolDefinition, ChatMessage,
+    };
 
     // --- build_messages ---
 
@@ -409,7 +432,10 @@ mod tests {
         let call = ApiToolCall {
             id: "call_001".into(),
             kind: "function".into(),
-            function: ApiFunctionCall { name: "read_file".into(), arguments: r#"{"path":"x"}"# .into() },
+            function: ApiFunctionCall {
+                name: "read_file".into(),
+                arguments: r#"{"path":"x"}"#.into(),
+            },
         };
         let json = serde_json::to_string(&call).unwrap();
         let back: ApiToolCall = serde_json::from_str(&json).unwrap();
@@ -426,7 +452,10 @@ mod tests {
             tool_calls: Some(vec![ApiToolCall {
                 id: "c1".into(),
                 kind: "function".into(),
-                function: ApiFunctionCall { name: "search".into(), arguments: "{}".into() },
+                function: ApiFunctionCall {
+                    name: "search".into(),
+                    arguments: "{}".into(),
+                },
             }]),
         };
         let json = serde_json::to_string(&msg).unwrap();

@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use api::{server::build_router, state::AppState};
-use figment::{providers::{Env, Format, Toml}, Figment};
+use figment::{
+    providers::{Env, Format, Toml},
+    Figment,
+};
 use logging::{
     layer::init_subscriber,
     types::{LogLevel, StdAppLog},
@@ -36,8 +39,8 @@ fn main() -> anyhow::Result<()> {
 async fn async_main(config: api::state::Config) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.server.host, config.server.port);
 
-    let mut startup_log = StdAppLog::app(LogLevel::Info, "nixacp-gateway starting")
-        .with_code_location("main");
+    let mut startup_log =
+        StdAppLog::app(LogLevel::Info, "nixacp-gateway starting").with_code_location("main");
     if let Some(id) = &config.log.app_id {
         startup_log = startup_log.with_app_id(id);
     }
@@ -58,6 +61,8 @@ async fn async_main(config: api::state::Config) -> anyhow::Result<()> {
         .with_app_id(state.log_ctx.app_id.as_deref().unwrap_or(""))
         .emit();
 
-    axum::serve(listener, router).await.context("server error")?;
+    axum::serve(listener, router)
+        .await
+        .context("server error")?;
     Ok(())
 }

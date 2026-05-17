@@ -40,7 +40,10 @@ pub async fn log_request_response(
             n != "authorization" && n != "cookie"
         })
         .filter_map(|(name, value)| {
-            value.to_str().ok().map(|v| (name.to_string(), v.to_owned()))
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.to_string(), v.to_owned()))
         })
         .collect();
 
@@ -96,13 +99,20 @@ pub async fn log_request_response(
         .headers()
         .iter()
         .filter_map(|(name, value)| {
-            value.to_str().ok().map(|v| (name.to_string(), v.to_owned()))
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.to_string(), v.to_owned()))
         })
         .collect();
 
     // RES_LOG
     let mut res_log = StdAppLog::res(
-        if status >= 500 { LogLevel::Error } else { LogLevel::Info },
+        if status >= 500 {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        },
         LogResponse {
             status_code: status,
             headers: res_headers,

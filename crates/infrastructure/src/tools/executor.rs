@@ -124,7 +124,10 @@ mod tests {
 
         assert_eq!(results.len(), 4);
         // Concurrent: 4 × 20 ms each → should finish in < 100 ms, not 80 ms serial.
-        assert!(elapsed < Duration::from_millis(100), "dispatch was not concurrent: {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "dispatch was not concurrent: {elapsed:?}"
+        );
     }
 
     #[tokio::test]
@@ -143,7 +146,11 @@ mod tests {
         let calls = vec![ToolCall::new("cu", "ghost_tool", "{}")];
         let results = exec.dispatch_all(&calls).await;
         assert_eq!(results.len(), 1);
-        assert!(results[0].content.as_str().contains("ghost_tool"), "{}", results[0].content.as_str());
+        assert!(
+            results[0].content.as_str().contains("ghost_tool"),
+            "{}",
+            results[0].content.as_str()
+        );
     }
 
     // ToolError::Timeout is produced when the inner future exceeds TOOL_TIMEOUT (10s).

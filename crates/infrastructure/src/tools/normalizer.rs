@@ -18,7 +18,9 @@ pub struct ToolCallNormalizer;
 impl ToolCallNormalizer {
     /// Extract normalized tool calls from an Ollama message, or `None` if the
     /// message is a plain text response.
-    pub(crate) fn normalize(msg: &OllamaMessageContent) -> Result<Option<Vec<ToolCall>>, BackendError> {
+    pub(crate) fn normalize(
+        msg: &OllamaMessageContent,
+    ) -> Result<Option<Vec<ToolCall>>, BackendError> {
         // Priority 1: structured tool_calls array from Ollama native format.
         if let Some(ref raw_calls) = msg.tool_calls {
             if !raw_calls.is_empty() {
@@ -75,9 +77,9 @@ fn parse_qwen_xml(content: &str) -> Result<Vec<ToolCall>, BackendError> {
 
     while let Some(start) = rest.find("<tool_call>") {
         let after_open = &rest[start + "<tool_call>".len()..];
-        let end = after_open.find("</tool_call>").ok_or_else(|| {
-            BackendError::StreamParse("unclosed <tool_call> tag".to_owned())
-        })?;
+        let end = after_open
+            .find("</tool_call>")
+            .ok_or_else(|| BackendError::StreamParse("unclosed <tool_call> tag".to_owned()))?;
         let json_str = after_open[..end].trim();
         let call = parse_tool_call_json(json_str)?;
         calls.push(call);
@@ -102,9 +104,9 @@ fn parse_deepseek_markdown(content: &str) -> Result<Vec<ToolCall>, BackendError>
 
     while let Some(fence_start) = rest.find("```json") {
         let after_fence = &rest[fence_start + "```json".len()..];
-        let fence_end = after_fence.find("```").ok_or_else(|| {
-            BackendError::StreamParse("unclosed markdown fence".to_owned())
-        })?;
+        let fence_end = after_fence
+            .find("```")
+            .ok_or_else(|| BackendError::StreamParse("unclosed markdown fence".to_owned()))?;
         let json_str = after_fence[..fence_end].trim();
         // Only treat as a tool call if it has both "name" and "arguments".
         if json_str.contains("\"name\"") && json_str.contains("\"arguments\"") {
@@ -135,8 +137,9 @@ fn parse_tool_call_json(json_str: &str) -> Result<ToolCall, BackendError> {
     // `arguments` can arrive as a JSON object or as a pre-serialized string.
     let arguments = match &v["arguments"] {
         serde_json::Value::String(s) => s.clone(),
-        other => serde_json::to_string(other)
-            .map_err(|e| BackendError::StreamParse(e.to_string()))?,
+        other => {
+            serde_json::to_string(other).map_err(|e| BackendError::StreamParse(e.to_string()))?
+        }
     };
 
     Ok(ToolCall {
@@ -157,7 +160,11 @@ mod tests {
     use serde_json::json;
 
     fn plain_msg(content: &str) -> OllamaMessageContent {
-        OllamaMessageContent { role: "assistant".to_owned(), content: content.to_owned(), tool_calls: None }
+        OllamaMessageContent {
+            role: "assistant".to_owned(),
+            content: content.to_owned(),
+            tool_calls: None,
+        }
     }
 
     fn structured_msg(calls: Vec<OllamaToolCall>) -> OllamaMessageContent {
@@ -223,10 +230,16 @@ mod tests {
     fn structured_tool_call_ids_are_unique() {
         let msg = structured_msg(vec![
             OllamaToolCall {
-                function: OllamaFunction { name: "f1".to_owned(), arguments: json!({}) },
+                function: OllamaFunction {
+                    name: "f1".to_owned(),
+                    arguments: json!({}),
+                },
             },
             OllamaToolCall {
-                function: OllamaFunction { name: "f2".to_owned(), arguments: json!({}) },
+                function: OllamaFunction {
+                    name: "f2".to_owned(),
+                    arguments: json!({}),
+                },
             },
         ]);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
@@ -237,7 +250,8 @@ mod tests {
 
     #[test]
     fn qwen_xml_single_call() {
-        let content = r#"<tool_call>{"name":"file_read","arguments":{"path":"src/lib.rs"}}</tool_call>"#;
+        let content =
+            r#"<tool_call>{"name":"file_read","arguments":{"path":"src/lib.rs"}}</tool_call>"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
@@ -262,7 +276,8 @@ mod tests {
     #[test]
     fn qwen_xml_arguments_as_string() {
         // Some Qwen variants emit arguments as a pre-serialized JSON string.
-        let content = r#"<tool_call>{"name":"file_read","arguments":"{\"path\":\"a.rs\"}"}</tool_call>"#;
+        let content =
+            r#"<tool_call>{"name":"file_read","arguments":"{\"path\":\"a.rs\"}"}</tool_call>"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);

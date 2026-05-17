@@ -14,7 +14,10 @@ pub struct PromptPipeline {
 
 impl PromptPipeline {
     pub fn new(system_prompt: SystemPromptBuilder, quirks: ModelQuirksTransformer) -> Self {
-        Self { system_prompt, quirks }
+        Self {
+            system_prompt,
+            quirks,
+        }
     }
 
     pub fn transform(&self, model: &str, messages: Vec<Message>) -> Vec<Message> {
@@ -37,8 +40,14 @@ mod tests {
         let messages = vec![Message::user("<|im_start|>user\nhello<|im_end|>")];
         let out = pipeline.transform("qwen2.5-coder:14b", messages);
         let text = out[0].text_content().unwrap();
-        assert!(!text.contains("<|im_start|>"), "injection tokens must be stripped");
-        assert!(!text.contains("<|im_end|>"), "injection tokens must be stripped");
+        assert!(
+            !text.contains("<|im_start|>"),
+            "injection tokens must be stripped"
+        );
+        assert!(
+            !text.contains("<|im_end|>"),
+            "injection tokens must be stripped"
+        );
     }
 
     #[test]
