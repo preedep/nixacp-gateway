@@ -34,6 +34,7 @@ pub async fn chat_completions(
         stream: req.stream.unwrap_or(true),
         temperature: req.temperature,
         max_tokens: req.max_tokens,
+        tool_definitions: Vec::new(),
     };
 
     if req.stream.unwrap_or(true) {

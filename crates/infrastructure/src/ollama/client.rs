@@ -192,6 +192,7 @@ impl LlmBackend for OllamaClient {
             content,
             prompt_tokens: 0,
             completion_tokens: 0,
+            tool_calls: None,
         })
     }
 
