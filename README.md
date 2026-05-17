@@ -7,24 +7,28 @@ An OpenAI-compatible streaming gateway for local coding LLMs (Ollama / Qwen / De
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | Minimal streaming proxy | ✅ Done |
-| 2 | Prompt pipeline + context compression | Planned |
-| 3 | Tool calls | Planned |
-| 4 | Reflection / retry + cancellation | Planned |
+| 2 | Prompt pipeline + context compression | ✅ Done |
+| 3 | Tool calls | ✅ Done |
+| 4 | Reflection / retry + cancellation | In Progress |
 | 5 | ACP protocol / Zed agent integration | Planned |
 | 6 | Observability + performance hot path | Planned |
 | 7 | MCP + multi-backend + horizontal scale | Planned |
 
-## Features (Phase 1)
+## Features
 
 - **OpenAI-compatible API** — `/v1/chat/completions` (streaming SSE + non-streaming) and `/v1/models`
 - **Ollama backend** — proxies to any remote or local Ollama instance
+- **Prompt pipeline** — `SystemPromptBuilder`, `ModelQuirksTransformer`, and per-model prompt optimisation
+- **Context compression** — sliding-window compressor keeps conversations within the model's token limit; pluggable strategy via trait
+- **Tool calls** — full OpenAI function-calling round-trip; `ToolLoopOrchestrator` detects → dispatches → injects → resubmits (max 5 iterations); built-in `FileReadTool` and `SearchTool`
+- **Tool-call normalisation** — translates between OpenAI format and model-native formats (Qwen2.5, DeepSeek, bare JSON)
 - **Structured logging** — [Standard Application Log v1.0](https://github.com/preedep/standard-app-log/blob/main/README.md) with configurable JSON / text output
 - **Layered config** — `gateway.toml` overridden by `GATEWAY_*` environment variables
 - **Custom Tokio runtime** — physical-core worker threads, 512 KB stacks, 64 blocking threads
 
 ## Prerequisites
 
-- Rust 1.80+
+- Rust 1.86+ (MSRV)
 - An [Ollama](https://ollama.com) instance with at least one model pulled
 
 ## Quick Start
@@ -99,18 +103,25 @@ Point Zed's OpenAI-compatible provider at the gateway:
 # Build
 cargo build --workspace
 
-# Run all tests
+# Run all tests (134 tests across all crates)
 cargo test --workspace
 
 # Run tests for a specific crate
-cargo test -p domain
-cargo test -p infrastructure
-cargo test -p logging
+cargo test -p domain          # 39 tests
+cargo test -p application     # 20 tests
+cargo test -p infrastructure  # 57 tests
+cargo test -p api             # 14 tests
 
-# Lint
-cargo clippy --workspace -- -D warnings
+# Run a single test by name
+cargo test -p application tool_loop::tests::single_tool_call_one_pass
 
-# Format
+# Run the tool-call integration tests only
+cargo test -p api --test tool_calls
+
+# Lint (CI enforces -D warnings — fix all before pushing)
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Format (run before every commit)
 cargo fmt --all
 
 # Check without building
@@ -130,11 +141,11 @@ Clean Architecture — dependencies flow inward only.
 ```
 nixacp-gateway (binary)
 │
-├── crates/api           HTTP server (Axum), SSE handler, OpenAI wire types
-├── crates/application   ChatService — thin orchestration layer
-├── crates/infrastructure OllamaClient, NDJSON stream parser
-├── crates/domain        Entities, ports (LlmBackend trait), value objects
-└── crates/logging       StdAppLog, log format config, subscriber init
+├── crates/api            HTTP server (Axum), SSE handler, OpenAI wire types
+├── crates/application    ChatService, ToolLoopOrchestrator, CompressionService, PromptPipeline
+├── crates/infrastructure OllamaClient, NDJSON parser, TiktokenCounter, ToolRegistry, ToolCallNormalizer
+├── crates/domain         Entities, ports (LlmBackend, ToolRuntime, TokenCounter, ContextCompressor)
+└── crates/logging        StdAppLog, log format config, subscriber init
 ```
 
 See `CLAUDE.md` for the full architecture guide, coding conventions, performance rules, and testing strategy.
