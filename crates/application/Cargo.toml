@@ -1,0 +1,13 @@
+[package]
+name = "application"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+domain       = { path = "../domain" }
+async-trait  = "0.1"
+tokio        = { version = "1", features = ["full"] }
+tracing      = "0.1"
+thiserror    = "2"
+futures-core = "0.3"
+futures-util = "0.3"

@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "crates/domain",
+    "crates/application",
+    "crates/infrastructure",
+    "crates/api",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[package]
+name = "nixacp-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nixacp-gateway"
+path = "src/main.rs"
+
+[dependencies]
+api            = { path = "crates/api" }
+infrastructure = { path = "crates/infrastructure" }
+domain         = { path = "crates/domain" }
+tokio          = { version = "1", features = ["full"] }
+num_cpus       = "1"
+figment        = { version = "0.10", features = ["toml", "env"] }
+serde          = { version = "1", features = ["derive"] }
+anyhow         = "1"
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+axum           = { version = "0.8" }

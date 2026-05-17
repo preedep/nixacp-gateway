@@ -1,0 +1,13 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[ollama]
+url = "http://nixhome-linux-g1pro:11434"
+default_model = "qwen2.5-coder:14b"
+max_concurrent = 2
+
+[[ollama.models]]
+name = "qwen2.5-coder:14b"
+display_name = "Qwen2.5 Coder 14B"
+max_tokens = 16384

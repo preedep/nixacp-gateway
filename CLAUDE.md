@@ -154,6 +154,23 @@ cargo bench -p infrastructure --bench hot_path
 - Tool calls are normalized at the infrastructure layer before entering application logic
 - Config is injected via constructor (no global state); use `Arc<Config>` for shared access
 
+## Comment Policy
+
+Write comments only when the **why** is non-obvious. Acceptable comment targets:
+
+- **Hidden constraints** — a platform quirk, a protocol edge case, or an upstream bug that forced an unusual decision (e.g., "Ollama sends a final empty chunk after `done: true` — consume it to avoid a spurious StreamParse error")
+- **Subtle invariants** — ordering requirements or aliasing rules that a future reader would need to know before touching the code (e.g., "acquire session lock, snapshot messages, *then* release before calling spawn_blocking — never hold the lock across an await")
+- **Workarounds** — a deliberate hack with a ticket or explanation (e.g., "reqwest 0.12 leaks connections on early drop; manually abort the response body here until #1234 is fixed")
+- **Non-obvious performance choices** — when the naïve alternative would be measurably worse and the reader might reach for it (e.g., "BytesMut::split_to avoids a memcpy; do not replace with `drain(..pos)` which copies")
+
+**Do not comment:**
+- What the code does (well-named functions and variables already say this)
+- Standard Rust patterns (`impl From<X> for Y`, `#[derive(Debug)]`, `Arc::clone`)
+- Temporary task context ("added for Phase 3", "called from chat handler") — this belongs in commit messages
+- The current date, author, or ticket number in source files
+
+**Docstrings:** Only on public API surfaces consumed by other crates — one sentence max. Never multi-paragraph. Avoid restating the function signature.
+
 ## Zed IDE Integration Notes
 
 - The ACP endpoint is the primary integration point for Zed's agent panel
