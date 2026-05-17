@@ -25,7 +25,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.80"
+          toolchain: "1.85"
           components: rustfmt, clippy
 
       - name: Cache cargo registry and build artifacts
@@ -53,7 +53,7 @@ jobs:
         run: cargo test --workspace
 
   msrv:
-    name: MSRV (1.80)
+    name: MSRV (1.85)
     runs-on: ubuntu-latest
 
     steps:
@@ -62,7 +62,7 @@ jobs:
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.80"
+          toolchain: "1.85"
 
       - name: Cache cargo
         uses: actions/cache@v4
