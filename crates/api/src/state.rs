@@ -3,8 +3,12 @@ use std::sync::Arc;
 use application::chat::ChatService;
 use application::compression::{CompressionService, SlidingWindowCompressor};
 use application::prompt::{ModelQuirksTransformer, PromptPipeline, SystemPromptBuilder};
+use application::tool_loop::ToolLoopOrchestrator;
+use domain::ports::tool_runtime::ToolRuntime;
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
 use infrastructure::token_counter::TiktokenCounter;
+use infrastructure::tools::file_read::FileReadTool;
+use infrastructure::tools::search::SearchTool;
 use logging::layer::LogFormat;
 use serde::Deserialize;
 
@@ -73,6 +77,7 @@ pub struct LogContext {
 pub struct AppState {
     pub config: Arc<Config>,
     pub chat: ChatService,
+    pub tool_loop: ToolLoopOrchestrator,
     pub log_ctx: LogContext,
 }
 
@@ -96,11 +101,19 @@ impl AppState {
             Arc::new(SlidingWindowCompressor::new(counter.clone())),
         );
 
-        let chat = ChatService::new(ollama, pipeline, compression, counter);
+        let chat = ChatService::new(ollama.clone(), pipeline, compression, counter);
+
+        let workspace_root = std::env::current_dir().unwrap_or_default();
+        let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
+            Arc::new(FileReadTool::new(workspace_root.clone())),
+            Arc::new(SearchTool::new(workspace_root, "rg")),
+        ];
+        let tool_loop = ToolLoopOrchestrator::new(ollama, built_in_tools);
+
         let log_ctx = LogContext {
             app_id: config.log.app_id.clone(),
             app_version: config.log.app_version.clone(),
         };
-        Ok(Self { config: Arc::new(config), chat, log_ctx })
+        Ok(Self { config: Arc::new(config), chat, tool_loop, log_ctx })
     }
 }

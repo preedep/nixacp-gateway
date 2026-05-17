@@ -7,12 +7,48 @@ pub struct ChatCompletionRequest {
     pub stream: Option<bool>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ApiToolDefinition>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
+    #[serde(default)]
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ApiToolCall>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ApiToolDefinition {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: ApiFunctionDefinition,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ApiFunctionDefinition {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub function: ApiFunctionCall,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiFunctionCall {
+    pub name: String,
+    pub arguments: String,
 }
 
 // --- Streaming (SSE) response ---

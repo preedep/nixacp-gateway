@@ -68,11 +68,11 @@ src/main.rs  |  gateway.toml
 **Exit criteria — all met:**
 - Conversation with 200+ messages stays within context window ✅ (compression_boundary_200_messages test)
 - Qwen injection tokens stripped from user input ✅ (strips_qwen_tokens test)
-- `cargo test --workspace` passes (36 tests, 0 warnings) ✅ (116 total after Phase 3.1–3.4)
+- `cargo test --workspace` passes (36 tests, 0 warnings) ✅ (130 total after Phase 3)
 
 ---
 
-## Phase 3 — Tool Calls 🔄 IN PROGRESS (3.1–3.4 done)
+## Phase 3 — Tool Calls ✅ DONE
 
 **Duration:** Weeks 6–7 | **Perf:** none (correctness only)
 
@@ -87,15 +87,16 @@ src/main.rs  |  gateway.toml
 - Built-in tools: `FileReadTool` (workspace root confinement via canonicalize, `../` rejected) ✅ (3.3)
 - Built-in tools: `SearchTool` (ripgrep via `tokio::process::Command`, optional sub-path) ✅ (3.3)
 - `application/tool_loop`: `ToolLoopOrchestrator` — detect → dispatch → inject → resubmit, max 5 passes ✅ (3.4)
-- `api/openai`: extend wire types + route requests with `tools` through orchestrator ⬜ (3.5)
-- `wiremock` integration test: 3-tool-call agentic loop ⬜ (3.5)
+- `api/openai`: extend wire types + route requests with `tools` through orchestrator ✅ (3.5)
+- `wiremock` integration test: 3-tool-call agentic loop ✅ (3.5)
 
-**Exit criteria:**
-- Gateway completes a 3-tool-call agentic loop end-to-end ⬜
+**Exit criteria — all met:**
+- Gateway completes a 3-tool-call agentic loop end-to-end ✅
 - `FileReadTool` returns `ToolError::Unauthorized` on `../` traversal ✅
 - `cargo test -p infrastructure` passes (53 tests) ✅
 - `cargo test -p application` passes (20 tests, includes 6 tool_loop tests) ✅
-- `cargo test -p api --test tool_calls` passes ⬜
+- `cargo test -p api --test tool_calls` passes (3 integration tests) ✅
+- `cargo test --workspace` passes (130 tests, 0 warnings) ✅
 
 ---
 
