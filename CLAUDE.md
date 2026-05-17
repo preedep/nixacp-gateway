@@ -171,6 +171,41 @@ Write comments only when the **why** is non-obvious. Acceptable comment targets:
 
 **Docstrings:** Only on public API surfaces consumed by other crates — one sentence max. Never multi-paragraph. Avoid restating the function signature.
 
+## Application Logging Standard
+
+All structured logs follow [Standard Application Log v1.0](https://github.com/preedep/standard-app-log/blob/main/README.md). The `crates/logging` crate owns the types and subscriber setup. **PII_LOG is not used.**
+
+### Log types emitted
+
+| LogType      | Where                                              |
+|--------------|----------------------------------------------------|
+| `APP_LOG`    | Startup / shutdown (`main.rs`)                     |
+| `REQ_LOG`    | Every inbound HTTP request (middleware)            |
+| `RES_LOG`    | Every HTTP response sent to caller (middleware)    |
+| `REQ_EX_LOG` | Every outgoing request to Ollama (`OllamaClient`)  |
+| `RES_EX_LOG` | Every response received from Ollama (`OllamaClient`) |
+
+### `[log]` config block (`gateway.toml`)
+
+```toml
+[log]
+format      = "json"          # "json" | "text"  (default: "json")
+level       = "info"          # tracing filter string
+app_id      = "nixacp-gateway"
+app_version = "0.1.0"
+```
+
+Override at runtime: `GATEWAY_LOG_FORMAT=text GATEWAY_LOG_LEVEL=debug cargo run`
+
+### Key rules
+
+- `StdAppLog::emit()` serialises to one JSON line and forwards to `tracing::info!` — works with both JSON and text subscribers.
+- Never log full request/response bodies for SSE streams (too large, chunked).
+- Never log Ollama message content — only model name and message count (`REQ_EX_LOG`).
+- Strip `Authorization` and `Cookie` headers before logging.
+- `correlation_id`: read from `X-Correlation-Id` header, or generate a new UUID if absent.
+- `request_id`: always a fresh UUID per request; injected into the response as `X-Request-Id`.
+
 ## Zed IDE Integration Notes
 
 - The ACP endpoint is the primary integration point for Zed's agent panel

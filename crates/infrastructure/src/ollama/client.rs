@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -11,6 +13,8 @@ use domain::{
     ports::llm_backend::{BackendError, BackendStream, LlmBackend},
 };
 use futures_util::StreamExt;
+use logging::types::{LogLevel, LogRequest, LogResponse, StdAppLog};
+use serde_json::json;
 
 use super::{
     stream,
@@ -64,6 +68,45 @@ fn domain_messages(req: &ConversationRequest) -> Vec<OllamaChatMessage> {
         .collect()
 }
 
+fn build_options(req: &ConversationRequest) -> Option<OllamaOptions> {
+    if req.temperature.is_none() && req.max_tokens.is_none() {
+        return None;
+    }
+    Some(OllamaOptions { temperature: req.temperature, num_predict: req.max_tokens })
+}
+
+fn log_req_ex(url: &str, model: &str, msg_count: usize) {
+    StdAppLog::req_ex(
+        LogLevel::Debug,
+        LogRequest {
+            id: String::new(),
+            host: String::new(),
+            headers: HashMap::new(),
+            url: url.to_owned(),
+            method: "POST".to_owned(),
+            // Log model and message count only — full content is too large for logs
+            body: json!({ "model": model, "message_count": msg_count }),
+        },
+    )
+    .with_code_location("infrastructure::ollama::client")
+    .with_message(format!("Ollama {url}"))
+    .emit();
+}
+
+fn log_res_ex(url: &str, status: u32, elapsed_ms: u32) {
+    StdAppLog::res_ex(
+        if status >= 500 { LogLevel::Error } else { LogLevel::Info },
+        LogResponse {
+            status_code: status,
+            headers: HashMap::new(),
+            body: serde_json::Value::Null,
+        },
+    )
+    .with_code_location("infrastructure::ollama::client")
+    .with_execution_time(elapsed_ms)
+    .with_message(format!("Ollama {url} -> {status} ({elapsed_ms}ms)"))
+    .emit();
+}
 
 #[async_trait]
 impl LlmBackend for OllamaClient {
@@ -74,16 +117,23 @@ impl LlmBackend for OllamaClient {
             stream: true,
             options: build_options(&request),
         };
+        let url = self.chat_url();
+        let msg_count = request.messages.len();
+
+        log_req_ex(&url, request.model.as_str(), msg_count);
+        let start = Instant::now();
 
         let response = self
             .http
-            .post(&self.chat_url())
+            .post(&url)
             .json(&body)
             .send()
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
         let status = response.status();
+        log_res_ex(&url, status.as_u16() as u32, start.elapsed().as_millis() as u32);
+
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
             return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
@@ -99,16 +149,23 @@ impl LlmBackend for OllamaClient {
             stream: false,
             options: build_options(&request),
         };
+        let url = self.chat_url();
+        let msg_count = request.messages.len();
+
+        log_req_ex(&url, request.model.as_str(), msg_count);
+        let start = Instant::now();
 
         let response = self
             .http
-            .post(&self.chat_url())
+            .post(&url)
             .json(&body)
             .send()
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
         let status = response.status();
+        log_res_ex(&url, status.as_u16() as u32, start.elapsed().as_millis() as u32);
+
         if !status.is_success() {
             let body_text = response.text().await.unwrap_or_default();
             return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
@@ -180,14 +237,4 @@ impl LlmBackend for OllamaClient {
 
         Ok(())
     }
-}
-
-fn build_options(req: &ConversationRequest) -> Option<OllamaOptions> {
-    if req.temperature.is_none() && req.max_tokens.is_none() {
-        return None;
-    }
-    Some(OllamaOptions {
-        temperature: req.temperature,
-        num_predict: req.max_tokens,
-    })
 }

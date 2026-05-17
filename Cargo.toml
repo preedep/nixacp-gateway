@@ -4,6 +4,7 @@ members = [
     "crates/application",
     "crates/infrastructure",
     "crates/api",
+    "crates/logging",
 ]
 resolver = "2"
 
@@ -30,11 +31,11 @@ path = "src/main.rs"
 api            = { path = "crates/api" }
 infrastructure = { path = "crates/infrastructure" }
 domain         = { path = "crates/domain" }
+logging        = { path = "crates/logging" }
 tokio          = { version = "1", features = ["full"] }
 num_cpus       = "1"
 figment        = { version = "0.10", features = ["toml", "env"] }
 serde          = { version = "1", features = ["derive"] }
 anyhow         = "1"
 tracing        = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 axum           = { version = "0.8" }

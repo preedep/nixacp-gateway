@@ -2,6 +2,12 @@
 host = "127.0.0.1"
 port = 8080
 
+[log]
+format = "json"
+level = "info"
+app_id = "nixacp-gateway"
+app_version = "0.1.0"
+
 [ollama]
 url = "http://nixhome-linux-g1pro:11434"
 default_model = "qwen2.5-coder:14b"
