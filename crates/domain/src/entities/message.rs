@@ -78,10 +78,7 @@ mod tests {
         let part = ContentPart::Text("hi".to_string());
         let json = serde_json::to_string(&part).unwrap();
         let back: ContentPart = serde_json::from_str(&json).unwrap();
-        if let ContentPart::Text(s) = back {
-            assert_eq!(s, "hi");
-        } else {
-            panic!("wrong variant");
-        }
+        let ContentPart::Text(s) = back;
+        assert_eq!(s, "hi");
     }
 }

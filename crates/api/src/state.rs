@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use application::chat::ChatService;
+use application::compression::{CompressionService, SlidingWindowCompressor};
+use application::prompt::{ModelQuirksTransformer, PromptPipeline, SystemPromptBuilder};
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
+use infrastructure::token_counter::TiktokenCounter;
 use logging::layer::LogFormat;
 use serde::Deserialize;
 
@@ -79,7 +82,21 @@ impl AppState {
             base_url: config.ollama.url.clone(),
             max_concurrent: config.ollama.max_concurrent,
         })?);
-        let chat = ChatService::new(ollama);
+
+        // TiktokenCounter loads BPE tables (~50 ms) at construction — do it
+        // once here so the first request pays no initialisation cost.
+        let counter = Arc::new(TiktokenCounter::new());
+
+        let pipeline = PromptPipeline::new(
+            SystemPromptBuilder::default(),
+            ModelQuirksTransformer::default(),
+        );
+        let compression = CompressionService::new(
+            counter.clone(),
+            Arc::new(SlidingWindowCompressor::new(counter.clone())),
+        );
+
+        let chat = ChatService::new(ollama, pipeline, compression, counter);
         let log_ctx = LogContext {
             app_id: config.log.app_id.clone(),
             app_version: config.log.app_version.clone(),

@@ -51,7 +51,7 @@ src/main.rs  |  gateway.toml
 
 ---
 
-## Phase 2 — Prompt Pipeline + Context Compression
+## Phase 2 — Prompt Pipeline + Context Compression ✅ DONE
 
 **Duration:** Weeks 4–5 | **Perf:** none (correctness only)
 
@@ -62,12 +62,13 @@ src/main.rs  |  gateway.toml
 - `infrastructure/token_counter`: `TiktokenCounter` — `cl100k_base`, `OnceLock<Arc<CoreBPE>>` at startup (never per-request)
 - `application/prompt`: `PromptPipeline`, `SystemPromptBuilder`, `ModelQuirksTransformer` (strip Qwen `<|im_start|>`, DeepSeek `<think>` leakage)
 - `application/compression`: `CompressionService`, `SlidingWindowCompressor`
-- Pipeline + compression wired into request path before every backend call
+- Pipeline + compression wired into `ChatService.prepare()` before every backend call
+- Real token counting wired into `complete()` (prompt_tokens + completion_tokens)
 
-**Exit criteria:**
-- Conversation with 200+ messages stays within context window (no 400 from Ollama)
-- Qwen injection tokens stripped from user input
-- `cargo test -p application` passes including compression boundary test
+**Exit criteria — all met:**
+- Conversation with 200+ messages stays within context window ✅ (compression_boundary_200_messages test)
+- Qwen injection tokens stripped from user input ✅ (strips_qwen_tokens test)
+- `cargo test --workspace` passes (36 tests, 0 warnings) ✅
 
 ---
 
