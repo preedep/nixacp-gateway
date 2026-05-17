@@ -19,33 +19,35 @@
 
 ---
 
-## Phase 1 — Minimal Streaming Proxy
+## Phase 1 — Minimal Streaming Proxy ✅ DONE
 
 **Duration:** Weeks 1–3 | **Perf:** Perf 1 (correct baseline)
 
-**Entry criteria:** Cargo workspace initialized; Ollama running locally.
+**Entry criteria:** Cargo workspace initialized; Ollama reachable (remote or local).
 
 **Deliverables:**
-- Workspace `Cargo.toml` with 4 crates: `domain`, `application`, `infrastructure`, `api`
-- `domain`: `Message`, `Role`, `ConversationRequest`, `StreamChunk`, `LlmBackend` port trait
-- `infrastructure/ollama`: `OllamaClient` — HTTP POST `/api/chat`, NDJSON stream parsing
-- `api`: `POST /v1/chat/completions` (SSE + non-streaming), `GET /v1/models`
-- `src/main.rs`: figment config, DI wiring, Tokio runtime, graceful shutdown skeleton
-- Basic `tracing_subscriber` console output
+- Workspace `Cargo.toml` with 5 crates: `domain`, `application`, `infrastructure`, `api`, `logging`
+- `domain`: `Message`, `Role`, `ConversationRequest`, `StreamChunk`, `LlmBackend` port trait, `BackendError`
+- `infrastructure/ollama`: `OllamaClient` — HTTP POST `/api/chat`, NDJSON stream via `BytesMut`/`unfold`
+- `api`: `POST /v1/chat/completions` (SSE + non-streaming), `GET /v1/models`, request/response logging middleware
+- `logging`: [Standard Application Log v1.0](https://github.com/preedep/standard-app-log/blob/main/README.md) — `StdAppLog`, `APP_LOG` / `REQ_LOG` / `RES_LOG` / `REQ_EX_LOG` / `RES_EX_LOG` (PII_LOG excluded); configurable `json` / `text` format via `[log]` config section
+- `src/main.rs`: figment config, DI wiring, custom Tokio runtime (physical cores, 512 KB stacks)
+- `gateway.toml`: layered config overridable via `GATEWAY_*` env vars
 
 **Key files:**
 ```
 crates/domain/src/entities/{message,model,conversation,stream_chunk}.rs
 crates/domain/src/ports/llm_backend.rs
 crates/infrastructure/src/ollama/{client,stream,types}.rs
-crates/api/src/{server,state,openai/chat,openai/models}.rs
+crates/api/src/{server,state,error,openai/chat,openai/models,middleware/logging}.rs
+crates/logging/src/{types,layer}.rs
 src/main.rs  |  gateway.toml
 ```
 
-**Exit criteria:**
-- `curl -N localhost:8080/v1/chat/completions` streams tokens from Ollama
-- Zed IDE receives a response via OpenAI-compat endpoint
-- `cargo test -p domain && cargo test -p infrastructure` pass
+**Exit criteria — all met:**
+- `curl -N localhost:8080/v1/chat/completions` streams SSE tokens from remote Ollama ✅
+- Zed IDE receives a response via OpenAI-compat endpoint ✅
+- `cargo test --workspace` passes (19 tests) ✅
 
 ---
 

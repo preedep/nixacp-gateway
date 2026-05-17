@@ -25,31 +25,39 @@ The project follows strict Clean Architecture with dependency rules enforced at 
 ```
 nixacp-gateway/
 ├── Cargo.toml                  # workspace root
+├── gateway.toml                # runtime config (Ollama URL, log format, models)
 ├── crates/
 │   ├── domain/                 # pure domain — zero external I/O dependencies
 │   │   └── src/
-│   │       ├── entities/       # Model, Message, ToolCall, Route
-│   │       ├── ports/          # traits: LlmBackend, ToolRuntime, Router
-│   │       └── value_objects/  # Token, ModelId, Temperature, etc.
+│   │       ├── entities/       # Model, Message, ConversationRequest, StreamChunk
+│   │       └── ports/          # traits: LlmBackend, ToolRuntime, Router
 │   ├── application/            # use cases, depends only on domain
 │   │   └── src/
-│   │       ├── routing/        # multi-model router
-│   │       ├── reflection/     # retry-on-failure loop
-│   │       ├── compression/    # context window management
-│   │       └── prompt/         # prompt optimization pipeline
+│   │       ├── chat.rs         # ChatService (Phase 2 adds prompt pipeline here)
+│   │       ├── routing/        # multi-model router (Phase 2+)
+│   │       ├── reflection/     # retry-on-failure loop (Phase 4)
+│   │       ├── compression/    # context window management (Phase 2)
+│   │       └── prompt/         # prompt optimization pipeline (Phase 2)
 │   ├── infrastructure/         # implements domain ports
 │   │   └── src/
-│   │       ├── ollama/         # Ollama HTTP client (LlmBackend impl)
-│   │       ├── openai/         # OpenAI-compat passthrough
-│   │       ├── acp/            # ACP protocol adapter
-│   │       └── tools/          # extensible tool runtime
-│   └── api/                    # HTTP server, entrypoint
+│   │       ├── ollama/         # OllamaClient — LlmBackend impl, NDJSON stream
+│   │       ├── openai/         # OpenAI-compat passthrough (Phase 7)
+│   │       ├── acp/            # ACP protocol adapter (Phase 5)
+│   │       └── tools/          # extensible tool runtime (Phase 3)
+│   ├── api/                    # HTTP server, Axum router
+│   │   └── src/
+│   │       ├── openai/         # /v1/chat/completions, /v1/models
+│   │       ├── middleware/     # request/response logging (StdAppLog)
+│   │       ├── acp/            # ACP endpoints (Phase 5)
+│   │       ├── state.rs        # AppState, Config, LogConfig
+│   │       ├── error.rs        # AppError → OpenAI error JSON
+│   │       └── server.rs       # build_router
+│   └── logging/                # Standard Application Log v1.0 types + subscriber
 │       └── src/
-│           ├── openai/         # /v1/chat/completions, /v1/models
-│           ├── acp/            # ACP endpoints
-│           └── middleware/     # auth, tracing, metrics
+│           ├── types.rs        # StdAppLog, LogType, LogLevel, LogRequest, LogResponse
+│           └── layer.rs        # init_subscriber, LogFormat (json/text)
 └── src/
-    └── main.rs                 # wires workspace crates together
+    └── main.rs                 # Tokio runtime, figment config, DI wiring
 ```
 
 ## Key Technical Requirements
