@@ -6,10 +6,11 @@ use crate::ollama::types::OllamaMessageContent;
 
 /// Converts raw Ollama message content into normalized `ToolCall` structs.
 ///
-/// Three formats are tried in priority order:
+/// Four formats are tried in priority order:
 ///   1. Ollama structured `tool_calls` array (OpenAI-compatible JSON objects)
 ///   2. Qwen XML: `<tool_call>{...}</tool_call>` blocks in content
 ///   3. DeepSeek markdown: ` ```json\n{...}\n``` ` fences in content
+///   4. Bare JSON: content is a raw `{"name":...,"arguments":...}` object
 ///
 /// Returns `None` when the message contains no tool calls in any format.
 /// Returns `Err` only when a recognized format is present but malformed.
@@ -60,6 +61,14 @@ impl ToolCallNormalizer {
             let calls = parse_deepseek_markdown(&msg.content)?;
             if !calls.is_empty() {
                 return Ok(Some(calls));
+            }
+        }
+
+        // Priority 4: bare JSON object — content is exactly a {"name":...,"arguments":...} object.
+        // Qwen2.5-coder emits this when Ollama doesn't use its structured tool_calls field.
+        if looks_like_bare_json_tool_call(&msg.content) {
+            if let Ok(call) = parse_tool_call_json(msg.content.trim()) {
+                return Ok(Some(vec![call]));
             }
         }
 
@@ -117,6 +126,16 @@ fn parse_deepseek_markdown(content: &str) -> Result<Vec<ToolCall>, BackendError>
     }
 
     Ok(calls)
+}
+
+// ---------------------------------------------------------------------------
+// Bare JSON detector (Priority 4)
+// ---------------------------------------------------------------------------
+
+fn looks_like_bare_json_tool_call(content: &str) -> bool {
+    let t = content.trim();
+    // Must start/end with braces and contain both key names.
+    t.starts_with('{') && t.ends_with('}') && t.contains("\"name\"") && t.contains("\"arguments\"")
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +369,44 @@ mod tests {
         let msg = plain_msg(content);
         let err = ToolCallNormalizer::normalize(&msg).unwrap_err();
         assert!(matches!(err, BackendError::StreamParse(_)));
+    }
+
+    // --- Priority 4: bare JSON format (Qwen2.5-coder via Ollama) ---
+
+    #[test]
+    fn bare_json_single_call() {
+        let content = "{\n  \"name\": \"file_read\",\n  \"arguments\": {\n    \"path\": \"gateway.toml\"\n  }\n}";
+        let msg = plain_msg(content);
+        let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.name, "file_read");
+        let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
+        assert_eq!(args["path"], "gateway.toml");
+    }
+
+    #[test]
+    fn bare_json_search_call() {
+        let content = "{\"name\":\"search\",\"arguments\":{\"query\":\"async fn\"}}";
+        let msg = plain_msg(content);
+        let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.name, "search");
+    }
+
+    #[test]
+    fn bare_json_without_name_field_returns_none() {
+        // A JSON object that lacks "name"/"arguments" must not be mistaken for a tool call.
+        let content = "{\"foo\": \"bar\", \"baz\": 42}";
+        let msg = plain_msg(content);
+        let result = ToolCallNormalizer::normalize(&msg).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn bare_json_does_not_fire_on_plain_text() {
+        let msg = plain_msg("Sure, I can help you with that!");
+        let result = ToolCallNormalizer::normalize(&msg).unwrap();
+        assert!(result.is_none());
     }
 
     // --- Plain text (no tool calls) ---
