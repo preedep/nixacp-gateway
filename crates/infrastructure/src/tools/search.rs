@@ -74,6 +74,13 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn rg_available() -> bool {
+        std::process::Command::new("rg")
+            .arg("--version")
+            .output()
+            .is_ok()
+    }
+
     fn setup(content: &str) -> (TempDir, SearchTool) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.txt"), content).unwrap();
@@ -95,6 +102,9 @@ mod tests {
 
     #[tokio::test]
     async fn returns_matches_for_existing_content() {
+        if !rg_available() {
+            return;
+        }
         let (_dir, tool) = setup("hello world\nfoo bar\nhello again");
         let result = tool.execute(&call("hello")).await.unwrap();
         let out = result.content.as_str();
@@ -104,6 +114,9 @@ mod tests {
 
     #[tokio::test]
     async fn returns_empty_string_for_no_matches() {
+        if !rg_available() {
+            return;
+        }
         let (_dir, tool) = setup("hello world");
         // ripgrep exits 1 with no matches — we return empty string.
         let result = tool.execute(&call("zzz_no_match_zzz")).await.unwrap();
@@ -134,6 +147,9 @@ mod tests {
 
     #[tokio::test]
     async fn optional_path_argument_narrows_search() {
+        if !rg_available() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub/match.txt"), "target line").unwrap();

@@ -40,6 +40,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Install ripgrep
+        run: |
+          if ! command -v rg &>/dev/null; then
+            if [[ "$RUNNER_OS" == "Linux" ]]; then
+              sudo apt-get install -y ripgrep
+            elif [[ "$RUNNER_OS" == "macOS" ]]; then
+              brew install ripgrep
+            fi
+          fi
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
