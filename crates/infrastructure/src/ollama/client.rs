@@ -9,17 +9,21 @@ use domain::{
         conversation::{ConversationRequest, ConversationResponse},
         message::ContentPart,
         model::{ModelDescriptor, ModelId},
+        tool::ToolDefinition,
     },
     ports::llm_backend::{BackendError, BackendStream, LlmBackend},
 };
-use futures_util::StreamExt;
 use logging::types::{LogLevel, LogRequest, LogResponse, StdAppLog};
 use serde_json::json;
 
 use super::{
     stream,
-    types::{OllamaChatMessage, OllamaGenerateRequest, OllamaOptions, OllamaTagsResponse},
+    types::{
+        OllamaChatMessage, OllamaGenerateRequest, OllamaOptions, OllamaTagsResponse, OllamaTool,
+        OllamaToolFunction,
+    },
 };
+use crate::tools::normalizer::ToolCallNormalizer;
 
 pub struct OllamaClientConfig {
     pub base_url: String,
@@ -67,9 +71,32 @@ fn domain_messages(req: &ConversationRequest) -> Vec<OllamaChatMessage> {
                 })
                 .collect::<Vec<_>>()
                 .join("");
-            OllamaChatMessage { role: m.role.to_string(), content }
+            OllamaChatMessage {
+                role: m.role.to_string(),
+                content,
+                tool_calls: None,
+                tool_call_id: m.tool_call_id.clone(),
+            }
         })
         .collect()
+}
+
+fn domain_tools(defs: &[ToolDefinition]) -> Option<Vec<OllamaTool>> {
+    if defs.is_empty() {
+        return None;
+    }
+    Some(
+        defs.iter()
+            .map(|d| OllamaTool {
+                kind: d.kind.clone(),
+                function: OllamaToolFunction {
+                    name: d.function.name.clone(),
+                    description: d.function.description.clone(),
+                    parameters: d.function.parameters.clone(),
+                },
+            })
+            .collect(),
+    )
 }
 
 fn build_options(req: &ConversationRequest) -> Option<OllamaOptions> {
@@ -120,6 +147,7 @@ impl LlmBackend for OllamaClient {
             messages: domain_messages(&request),
             stream: true,
             options: build_options(&request),
+            tools: domain_tools(&request.tool_definitions),
         };
         let url = self.chat_url();
         let msg_count = request.messages.len();
@@ -154,6 +182,7 @@ impl LlmBackend for OllamaClient {
             messages: domain_messages(&request),
             stream: false,
             options: build_options(&request),
+            tools: domain_tools(&request.tool_definitions),
         };
         let url = self.chat_url();
         let msg_count = request.messages.len();
@@ -177,14 +206,20 @@ impl LlmBackend for OllamaClient {
             return Err(BackendError::Upstream { status: status.as_u16(), body: body_text });
         }
 
-        let mut stream = stream::into_stream(response);
-        let mut content = String::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            if !chunk.is_terminal() {
-                content.push_str(&chunk.delta);
-            }
-        }
+        // Non-streaming: Ollama returns a single JSON object (the terminal
+        // NDJSON line with done:true). Parse it directly to capture tool_calls
+        // from the message struct — they don't appear in the delta text.
+        let raw_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| BackendError::Transport(e.to_string()))?;
+
+        let ollama_resp: crate::ollama::types::OllamaChatChunk =
+            serde_json::from_slice(&raw_bytes)
+                .map_err(|e| BackendError::StreamParse(e.to_string()))?;
+
+        let tool_calls = ToolCallNormalizer::normalize(&ollama_resp.message)?;
+        let content = ollama_resp.message.content;
 
         Ok(ConversationResponse {
             id: request.id,
@@ -192,7 +227,7 @@ impl LlmBackend for OllamaClient {
             content,
             prompt_tokens: 0,
             completion_tokens: 0,
-            tool_calls: None,
+            tool_calls,
         })
     }
 
