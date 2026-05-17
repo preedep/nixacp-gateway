@@ -92,10 +92,7 @@ impl AppState {
         // once here so the first request pays no initialisation cost.
         let counter = Arc::new(TiktokenCounter::new());
 
-        let pipeline = PromptPipeline::new(
-            SystemPromptBuilder::default(),
-            ModelQuirksTransformer,
-        );
+        let pipeline = PromptPipeline::new(SystemPromptBuilder::default(), ModelQuirksTransformer);
         let compression = CompressionService::new(
             counter.clone(),
             Arc::new(SlidingWindowCompressor::new(counter.clone())),
