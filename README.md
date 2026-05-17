@@ -138,6 +138,108 @@ GATEWAY_LOG_LEVEL=debug cargo run
 
 Clean Architecture — dependencies flow inward only.
 
+```mermaid
+graph TB
+    subgraph Clients
+        ZED[Zed IDE]
+        CURL[curl / HTTP client]
+        AGENT[Coding agent]
+    end
+
+    subgraph API["crates/api  —  HTTP (Axum)"]
+        ROUTER[build_router]
+        OPENAI_H["/v1/chat/completions\n/v1/models"]
+        MIDDLEWARE[LogMiddleware\nCorrelation-Id]
+        STATE[AppState\nConfig]
+    end
+
+    subgraph APPLICATION["crates/application  —  Use Cases"]
+        CHAT[ChatService]
+        TOOL_LOOP[ToolLoopOrchestrator\nmax 5 iterations]
+        PROMPT[PromptPipeline\nSystemPromptBuilder\nModelQuirksTransformer]
+        COMPRESS[CompressionService\nSlidingWindowCompressor]
+    end
+
+    subgraph DOMAIN["crates/domain  —  Entities & Ports"]
+        ENTITIES[Model · Message\nConversationRequest\nStreamChunk · Tool*]
+        PORTS[LlmBackend · ToolRuntime\nTokenCounter · ContextCompressor]
+    end
+
+    subgraph INFRA["crates/infrastructure  —  Adapters"]
+        OLLAMA[OllamaClient\nNDJSON stream]
+        TIKTOKEN[TiktokenCounter\ncl100k_base OnceLock]
+        TOOL_REG[ToolRegistry\nToolExecutor]
+        NORMALIZER[ToolCallNormalizer\nQwen · DeepSeek · bare JSON]
+        FILE_TOOL[FileReadTool]
+        SEARCH_TOOL[SearchTool]
+    end
+
+    subgraph LOGGING["crates/logging"]
+        STDLOG[StdAppLog v1.0\nJSON / text]
+    end
+
+    OLLAMA_SRV[(Ollama Server\nnixhome-linux-g1pro:11434)]
+
+    %% Client → API
+    ZED -->|OpenAI HTTP| ROUTER
+    CURL -->|OpenAI HTTP| ROUTER
+    AGENT -->|OpenAI HTTP| ROUTER
+
+    %% API internals
+    ROUTER --> MIDDLEWARE
+    ROUTER --> STATE
+    OPENAI_H --> CHAT
+
+    %% API → Application
+    STATE --> CHAT
+    STATE --> TOOL_LOOP
+
+    %% Application internals
+    CHAT --> PROMPT
+    CHAT --> COMPRESS
+    CHAT --> TOOL_LOOP
+
+    %% Application → Domain ports
+    CHAT -->|LlmBackend port| PORTS
+    TOOL_LOOP -->|ToolRuntime port| PORTS
+    COMPRESS -->|TokenCounter port| PORTS
+
+    %% Infrastructure implements Domain ports
+    PORTS -.->|implements| OLLAMA
+    PORTS -.->|implements| TIKTOKEN
+    PORTS -.->|implements| TOOL_REG
+
+    %% Infrastructure internals
+    TOOL_REG --> NORMALIZER
+    TOOL_REG --> FILE_TOOL
+    TOOL_REG --> SEARCH_TOOL
+
+    %% Infrastructure → external
+    OLLAMA -->|reqwest SSE| OLLAMA_SRV
+
+    %% Logging (cross-cutting)
+    MIDDLEWARE --> STDLOG
+    OLLAMA --> STDLOG
+
+    classDef domain fill:#dbeafe,stroke:#3b82f6
+    classDef app fill:#dcfce7,stroke:#22c55e
+    classDef infra fill:#fef9c3,stroke:#eab308
+    classDef apiLayer fill:#fce7f3,stroke:#ec4899
+    classDef log fill:#f3e8ff,stroke:#a855f7
+    classDef external fill:#f1f5f9,stroke:#94a3b8
+
+    class ENTITIES,PORTS domain
+    class CHAT,TOOL_LOOP,PROMPT,COMPRESS app
+    class OLLAMA,TIKTOKEN,TOOL_REG,NORMALIZER,FILE_TOOL,SEARCH_TOOL infra
+    class ROUTER,OPENAI_H,MIDDLEWARE,STATE apiLayer
+    class STDLOG log
+    class OLLAMA_SRV,ZED,CURL,AGENT external
+```
+
+### Dependency rule
+
+Arrows between crates go **inward only** — `api → application → domain ← infrastructure`. The domain layer has zero external I/O dependencies; infrastructure implements domain ports at the boundary.
+
 ```
 nixacp-gateway (binary)
 │
