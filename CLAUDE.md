@@ -164,20 +164,22 @@ cargo bench -p infrastructure --bench hot_path
 
 ## Comment Policy
 
-Write comments only when the **why** is non-obvious. Acceptable comment targets:
+Write a comment only when the **why** is non-obvious to a competent Rust reader. Four acceptable targets:
 
-- **Hidden constraints** — a platform quirk, a protocol edge case, or an upstream bug that forced an unusual decision (e.g., "Ollama sends a final empty chunk after `done: true` — consume it to avoid a spurious StreamParse error")
-- **Subtle invariants** — ordering requirements or aliasing rules that a future reader would need to know before touching the code (e.g., "acquire session lock, snapshot messages, *then* release before calling spawn_blocking — never hold the lock across an await")
-- **Workarounds** — a deliberate hack with a ticket or explanation (e.g., "reqwest 0.12 leaks connections on early drop; manually abort the response body here until #1234 is fixed")
-- **Non-obvious performance choices** — when the naïve alternative would be measurably worse and the reader might reach for it (e.g., "BytesMut::split_to avoids a memcpy; do not replace with `drain(..pos)` which copies")
+| Category | Test question | Example in this codebase |
+|---|---|---|
+| **Hidden constraint** | "Would a reader be surprised this order matters?" | Config loaded before `init_subscriber` — format comes from config |
+| **Subtle invariant** | "Would a reader break this without realising?" | `state.done = true` after terminal chunk — prevents re-polling Ollama after `done:true` |
+| **Workaround** | "Is this code strange because of an external bug?" | Trailing-buf flush in `stream.rs` — Ollama omits final newline on some versions |
+| **Non-obvious perf choice** | "Would a reader reach for the naïve alternative?" | `pool_max_idle = max_concurrent * 2` — spare connection avoids TLS handshake on next request |
 
 **Do not comment:**
-- What the code does (well-named functions and variables already say this)
-- Standard Rust patterns (`impl From<X> for Y`, `#[derive(Debug)]`, `Arc::clone`)
-- Temporary task context ("added for Phase 3", "called from chat handler") — this belongs in commit messages
-- The current date, author, or ticket number in source files
+- What the code does — well-named identifiers already say this
+- Standard Rust patterns (`#[derive(Debug)]`, `Arc::clone`, `impl From<X> for Y`)
+- Phase/task context ("added for Phase 3") — belongs in commit messages, not source
+- Inline `// ---` section dividers or decorative separators
 
-**Docstrings:** Only on public API surfaces consumed by other crates — one sentence max. Never multi-paragraph. Avoid restating the function signature.
+**Docstrings:** One sentence max, only on `pub` items consumed by other crates. Never restate the signature. See `StdAppLog::emit` for a correct example.
 
 ## Application Logging Standard
 

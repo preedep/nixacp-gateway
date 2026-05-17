@@ -49,10 +49,15 @@ async fn stream_response(
     model: String,
 ) -> Result<Response, AppError> {
     let mut backend_stream = state.chat.stream(domain_req).await?;
+    // Capacity 32: provides backpressure if the client stalls while keeping
+    // memory bounded (~4 KB at ~128 B per event). Infallible satisfies axum's
+    // Sse<S> bound without a custom error type.
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
     let chunk_id = format!("chatcmpl-{}", Uuid::new_v4().simple());
 
     tokio::spawn(async move {
+        // OpenAI spec requires an initial delta with role="assistant" and no
+        // content before the first token delta.
         // Send initial role delta
         let initial = ChatCompletionChunk {
             id: chunk_id.clone(),
@@ -108,8 +113,10 @@ async fn stream_response(
                 Err(e) => Ok(Event::default().data(format!("[error] {e}"))),
             };
 
+            // tx.send error means the receiver (SSE body) was dropped — the
+            // client disconnected. Stop pumping to avoid driving Ollama for nothing.
             if tx.send(event).await.is_err() {
-                return; // Client disconnected
+                return;
             }
         }
 

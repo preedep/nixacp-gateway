@@ -12,6 +12,10 @@ pub fn init_subscriber(format: &LogFormat, level: &str) {
     let filter = level;
     match format {
         LogFormat::Json => {
+            // with_current_span(false) and with_span_list(false) suppress the
+            // "span" and "spans" keys that tracing-subscriber injects by default.
+            // Those fields are not part of the StdAppLog schema and would clutter
+            // the structured output consumed by log aggregators.
             tracing_subscriber::fmt()
                 .json()
                 .with_env_filter(

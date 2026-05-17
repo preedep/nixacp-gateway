@@ -33,6 +33,10 @@ pub struct OllamaClient {
 
 impl OllamaClient {
     pub fn new(config: OllamaClientConfig) -> anyhow::Result<Self> {
+        // Pool size is 2× concurrency: one idle connection per in-flight request
+        // plus one spare so the next request doesn't wait for a TLS handshake.
+        // tcp_nodelay eliminates the 40 ms Nagle delay on the first chunk of each
+        // streaming response — critical for perceived latency.
         let http = reqwest::Client::builder()
             .pool_max_idle_per_host(config.max_concurrent * 2)
             .tcp_nodelay(true)
@@ -132,6 +136,8 @@ impl LlmBackend for OllamaClient {
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
         let status = response.status();
+        // RES_EX_LOG is emitted here, before the error check, so the round-trip
+        // time is always recorded even for error responses.
         log_res_ex(&url, status.as_u16() as u32, start.elapsed().as_millis() as u32);
 
         if !status.is_success() {

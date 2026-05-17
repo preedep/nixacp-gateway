@@ -10,7 +10,8 @@ use logging::{
 use tokio::net::TcpListener;
 
 fn main() -> anyhow::Result<()> {
-    // Config must be loaded before the subscriber so we know the log format.
+    // Config is extracted before the subscriber is initialised: the subscriber
+    // format (json/text) comes from config, so the order cannot be reversed.
     let config: api::state::Config = Figment::new()
         .merge(Toml::file("gateway.toml"))
         .merge(Env::prefixed("GATEWAY_").split("_"))
@@ -19,6 +20,9 @@ fn main() -> anyhow::Result<()> {
 
     init_subscriber(&config.log.format, &config.log.level);
 
+    // Physical cores only: hyper-threads share L1/L2 and hurt async throughput
+    // on memory-bound workloads. 512 KB stacks avoid overflow on deep async
+    // chains without the default 2 MB waste per thread.
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(num_cpus::get_physical())
         .max_blocking_threads(64)

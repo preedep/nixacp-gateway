@@ -19,11 +19,14 @@ pub fn into_stream(response: reqwest::Response) -> BackendStream {
     struct State {
         response: reqwest::Response,
         buf: BytesMut,
+        // Sentinel so the unfold closure can signal exhaustion without returning
+        // None immediately — we may still need to flush the trailing buffer first.
         done: bool,
     }
 
     let initial = State {
         response,
+        // 8 KB covers the vast majority of NDJSON lines without reallocation.
         buf: BytesMut::with_capacity(8 * 1024),
         done: false,
     };
@@ -34,6 +37,7 @@ pub fn into_stream(response: reqwest::Response) -> BackendStream {
                 return None;
             }
 
+            // Fast path: a complete line is already in the buffer.
             if let Some(pos) = memchr::memchr(b'\n', &state.buf) {
                 let line_bytes = state.buf.split_to(pos + 1);
                 let trimmed = line_bytes.trim_ascii();
@@ -43,16 +47,21 @@ pub fn into_stream(response: reqwest::Response) -> BackendStream {
                 let chunk = parse_ndjson_line(trimmed);
                 let is_terminal = chunk.as_ref().map(|c| c.is_terminal()).unwrap_or(false);
                 if is_terminal {
+                    // Set done so the next poll returns None without hitting the
+                    // network again — Ollama may send extra bytes after done:true.
                     state.done = true;
                 }
                 return Some((chunk, state));
             }
 
+            // Slow path: wait for more bytes from the network.
             match state.response.chunk().await {
                 Ok(Some(bytes)) => {
                     state.buf.extend_from_slice(&bytes);
                 }
                 Ok(None) => {
+                    // Connection closed. Flush any partial line left in the buffer
+                    // (Ollama omits the final newline on some versions).
                     let remaining = state.buf.split();
                     let trimmed = remaining.trim_ascii().to_owned();
                     state.done = true;
