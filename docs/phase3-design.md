@@ -229,8 +229,8 @@ ripgrep_bin    = "rg"     # SearchTool binary; must be on PATH
 
 ## Exit criteria (all sub-phases)
 
-- [ ] 3.1: `cargo test -p domain` — all tool entity serde round-trips pass
-- [ ] 3.2: `cargo test -p infrastructure` — normalizer handles all 3 formats + malformed
-- [ ] 3.3: `cargo test -p infrastructure` — FileReadTool path traversal rejected; SearchTool returns results
+- [x] 3.1: `cargo test -p domain` — all tool entity serde round-trips pass ✅
+- [x] 3.2: `cargo test -p infrastructure` — normalizer handles all 3 formats + malformed ✅
+- [x] 3.3: `cargo test -p infrastructure` — FileReadTool path traversal rejected; SearchTool returns results ✅
 - [ ] 3.4: `cargo test -p application` — 3-pass tool loop test passes
 - [ ] 3.5: `cargo test --workspace` — full suite green; curl with `tools` field works end-to-end
