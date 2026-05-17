@@ -81,7 +81,7 @@ src/main.rs  |  gateway.toml
 **Deliverables:**
 - `domain/entities`: `ToolDefinition`, `ToolCall`, `ToolResult` ✅ (3.1)
 - `domain/ports`: `ToolRuntime` trait ✅ (3.1)
-- `infrastructure/tools`: `ToolCallNormalizer` (OpenAI JSON + Qwen XML + DeepSeek markdown fence) ✅ (3.2)
+- `infrastructure/tools`: `ToolCallNormalizer` (OpenAI JSON + Qwen XML + DeepSeek markdown + bare JSON) ✅ (3.2)
 - `infrastructure/ollama`: Ollama wire types extended with `OllamaToolCall`, `OllamaFunction` ✅ (3.2)
 - `infrastructure/tools`: `ToolRegistry`, `ToolExecutor` (10s timeout, `FuturesUnordered`) ✅ (3.3)
 - Built-in tools: `FileReadTool` (workspace root confinement via canonicalize, `../` rejected) ✅ (3.3)
@@ -93,10 +93,10 @@ src/main.rs  |  gateway.toml
 **Exit criteria — all met:**
 - Gateway completes a 3-tool-call agentic loop end-to-end ✅
 - `FileReadTool` returns `ToolError::Unauthorized` on `../` traversal ✅
-- `cargo test -p infrastructure` passes (53 tests) ✅
+- `cargo test -p infrastructure` passes (57 tests) ✅
 - `cargo test -p application` passes (20 tests, includes 6 tool_loop tests) ✅
 - `cargo test -p api --test tool_calls` passes (3 integration tests) ✅
-- `cargo test --workspace` passes (130 tests, 0 warnings) ✅
+- `cargo test --workspace` passes (134 tests, 0 warnings) ✅
 
 ---
 
