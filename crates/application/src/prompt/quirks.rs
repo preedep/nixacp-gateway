@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn strips_qwen_tokens() {
-        let t = ModelQuirksTransformer::default();
+        let t = ModelQuirksTransformer;
         let msgs = vec![Message::user("<|im_start|>user\nhello<|im_end|>")];
         let out = t.apply("qwen2.5-coder:14b", msgs);
         let text = out[0].text_content().unwrap();
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn strips_deepseek_think_tags() {
-        let t = ModelQuirksTransformer::default();
+        let t = ModelQuirksTransformer;
         let msgs = vec![Message::user("<think>reasoning</think>final answer")];
         let out = t.apply("deepseek-coder:7b", msgs);
         let text = out[0].text_content().unwrap();
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn no_change_for_unknown_model() {
-        let t = ModelQuirksTransformer::default();
+        let t = ModelQuirksTransformer;
         let msgs = vec![Message::user("hello world")];
         let out = t.apply("llama3:8b", msgs);
         assert_eq!(out[0].text_content().unwrap(), "hello world");
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn unclosed_think_tag_drops_tail() {
-        let t = ModelQuirksTransformer::default();
+        let t = ModelQuirksTransformer;
         let msgs = vec![Message::user("before<think>unclosed")];
         let out = t.apply("deepseek-r1:7b", msgs);
         let text = out[0].text_content().unwrap();

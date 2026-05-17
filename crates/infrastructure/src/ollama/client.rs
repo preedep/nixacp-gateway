@@ -68,9 +68,9 @@ fn domain_messages(req: &ConversationRequest) -> Vec<OllamaChatMessage> {
             let content = m
                 .content
                 .iter()
-                .filter_map(|p| {
+                .map(|p| {
                     let ContentPart::Text(s) = p;
-                    Some(s.as_str())
+                    s.as_str()
                 })
                 .collect::<Vec<_>>()
                 .join("");
@@ -260,7 +260,7 @@ impl LlmBackend for OllamaClient {
     async fn list_models(&self) -> Result<Vec<ModelDescriptor>, BackendError> {
         let response = self
             .http
-            .get(&self.tags_url())
+            .get(self.tags_url())
             .send()
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
@@ -294,7 +294,7 @@ impl LlmBackend for OllamaClient {
     async fn health_check(&self) -> Result<(), BackendError> {
         let response = self
             .http
-            .get(&self.tags_url())
+            .get(self.tags_url())
             .send()
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;

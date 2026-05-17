@@ -94,7 +94,7 @@ impl AppState {
 
         let pipeline = PromptPipeline::new(
             SystemPromptBuilder::default(),
-            ModelQuirksTransformer::default(),
+            ModelQuirksTransformer,
         );
         let compression = CompressionService::new(
             counter.clone(),
