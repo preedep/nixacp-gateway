@@ -38,8 +38,8 @@ nixacp-gateway/
 │   │       ├── tool_loop/      # ToolLoopOrchestrator — detect→dispatch→inject→resubmit (max 5)
 │   │       ├── compression/    # CompressionService, SlidingWindowCompressor
 │   │       ├── prompt/         # PromptPipeline, SystemPromptBuilder, ModelQuirksTransformer
-│   │       ├── routing/        # multi-model router (Phase 4+)
-│   │       └── reflection/     # retry-on-failure loop (Phase 4)
+│   │       ├── routing/        # multi-model router (Phase 4+) — not yet built
+│   │       └── reflection/     # retry-on-failure loop (Phase 4) — not yet built
 │   ├── infrastructure/         # implements domain ports
 │   │   └── src/
 │   │       ├── ollama/         # OllamaClient — LlmBackend impl, NDJSON stream
@@ -129,7 +129,7 @@ cargo check --workspace
 - Test domain logic and application use-cases in isolation — no I/O, no HTTP, no real Ollama.
 - Mock `LlmBackend`, `ToolRuntime`, `SessionStore` ports using simple `struct FakeBackend` impls, not `mockall` — keeps tests readable.
 - Run: `cargo test -p domain` / `cargo test -p application`
-- Run one test: `cargo test -p application reflection::tests::test_quality_check_incomplete_code`
+- Run one test: `cargo test -p application tool_loop::tests::single_tool_call_one_pass`
 
 ### Integration tests
 - Live in `crates/<crate>/tests/` (Rust integration test convention).
@@ -151,13 +151,32 @@ cargo check --workspace
 
 ### Test commands summary
 ```bash
-cargo test --workspace                        # all unit + integration tests
-cargo test -p domain                          # domain unit tests only
-cargo test -p application                     # application unit tests only
-cargo test -p api --test streaming            # single integration test file
+cargo test --workspace                        # all unit + integration tests (130 tests)
+cargo test -p domain                          # domain unit tests only (39 tests)
+cargo test -p application                     # application unit tests only (20 tests)
+cargo test -p infrastructure                  # infrastructure unit tests (53 tests)
+cargo test -p api                             # api unit + integration tests (14 tests)
+cargo test -p api --test tool_calls           # tool-call integration tests only
 cargo bench --workspace                       # all benchmarks
 cargo bench -p infrastructure --bench hot_path
 ```
+
+## CI
+
+Workflow: `.github/workflows/ci.yaml` — runs on push/PR to `main` and `develop`.
+
+| Job | What it does |
+|---|---|
+| `test (ubuntu-latest)` | fmt check, clippy -D warnings, build, `cargo test --workspace` |
+| `test (macos-latest)` | same matrix |
+| `msrv` | `cargo check --workspace` on Rust 1.86 (the pinned MSRV) |
+
+**Known constraints — do not regress these:**
+- `cargo fmt --all` must be run before every commit. The CI rustfmt (1.86) and local rustfmt may format differently; always let CI be the authority.
+- `cargo clippy --workspace --all-targets -- -D warnings` must be clean. Fix all warnings; never silence with `#[allow(...)]` unless there is no correct alternative.
+- `wiremock` is pinned to `0.6.2` in `Cargo.lock` — 0.6.3+ uses let-chain syntax requiring Rust 1.88+.
+- `ripgrep` (`rg`) is installed in CI via `apt-get`/`brew`. `SearchTool` tests that invoke `rg` guard themselves with `rg_available()` so they skip gracefully in environments without it.
+- MSRV is `1.86`. Transitive dependencies must not require a newer compiler — check with `cargo check --workspace` on 1.86 before bumping any dep.
 
 ## Coding Conventions
 
