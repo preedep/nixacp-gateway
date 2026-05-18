@@ -42,6 +42,11 @@ pub async fn chat_completions(
     let tool_definitions: Vec<ToolDefinition> = gateway_definitions;
     let has_our_tools = true;
 
+    // Apply prompt pipeline (system-prompt injection + quirks) before the
+    // tool loop. ChatService.prepare() runs this too, but the tool-loop path
+    // bypasses ChatService entirely, so we must apply it here explicitly.
+    let messages = state.chat.apply_pipeline(&req.model, messages);
+
     let domain_req = ConversationRequest {
         id: Uuid::new_v4(),
         model: ModelId::new(&req.model),

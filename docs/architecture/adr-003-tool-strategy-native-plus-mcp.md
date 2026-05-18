@@ -165,3 +165,27 @@ the result.
 **`workspace_root` config** — `gateway.toml` now has a top-level `workspace_root` key.
 All tools are confined to this path. The system prompt includes the root so the model uses
 relative paths rather than absolute paths from Zed's file context.
+
+**`domain_messages()` tool_calls serialization fix** — `OllamaClient::domain_messages()` now
+serializes `Message.tool_calls` onto the outgoing `OllamaChatMessage`. Previously, assistant
+messages carrying tool calls were sent with empty `content` and no `tool_calls` field; Ollama
+could not correlate the subsequent tool-result messages and stalled until timeout (502 on pass 2).
+
+**System prompt injection for Zed requests** — `SystemPromptBuilder::apply()` now appends the
+gateway's tool-use rules to an existing system message rather than skipping injection when one is
+present. Zed always sends its own system message, so the previous behavior left the model with no
+tool instructions. The appended rules are visible in the `prompt_eval_count` token count (increased
+from 3435 to 3618+ on first call).
+
+**Pipeline applied before tool loop** — `chat_completions()` in `api/openai/chat.rs` now calls
+`state.chat.apply_pipeline()` before handing the request to `ToolLoopOrchestrator`. The tool loop
+calls `backend.complete()` directly, bypassing `ChatService.prepare()`, so the pipeline transform
+must be applied at the call site.
+
+**`GATEWAY_WORKSPACE_ROOT` env var fix** — `src/main.rs` previously used
+`Env::prefixed("GATEWAY_").split("_")` for all env vars. The `split("_")` caused
+`GATEWAY_WORKSPACE_ROOT` to be mapped to the nested key `workspace.root` instead of the flat
+`workspace_root` field — so the env var was silently ignored and tools used the gateway binary's
+working directory as the workspace root. Fixed by splitting only the known nested keys
+(`log_level`, `log_format`, `server_host`, `server_port`) and mapping `GATEWAY_WORKSPACE_ROOT`
+separately via `Env::map`.

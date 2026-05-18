@@ -19,8 +19,8 @@ use serde_json::json;
 use super::{
     stream,
     types::{
-        OllamaChatMessage, OllamaGenerateRequest, OllamaOptions, OllamaTagsResponse, OllamaTool,
-        OllamaToolFunction,
+        OllamaChatMessage, OllamaFunction, OllamaGenerateRequest, OllamaOptions,
+        OllamaTagsResponse, OllamaTool, OllamaToolCall, OllamaToolFunction,
     },
 };
 use crate::tools::normalizer::ToolCallNormalizer;
@@ -74,10 +74,32 @@ fn domain_messages(req: &ConversationRequest) -> Vec<OllamaChatMessage> {
                 })
                 .collect::<Vec<_>>()
                 .join("");
+
+            // Assistant messages that carry tool calls must serialize the
+            // tool_calls field so Ollama can correlate the tool results on the
+            // next turn.  Sending only an empty content string causes Ollama to
+            // stall because it has no call to match the incoming tool results.
+            let ollama_tool_calls = m.tool_calls.as_ref().map(|calls| {
+                calls
+                    .iter()
+                    .map(|c| {
+                        let arguments: serde_json::Value =
+                            serde_json::from_str(&c.function.arguments)
+                                .unwrap_or(serde_json::Value::Object(Default::default()));
+                        OllamaToolCall {
+                            function: OllamaFunction {
+                                name: c.function.name.clone(),
+                                arguments,
+                            },
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+
             OllamaChatMessage {
                 role: m.role.to_string(),
                 content,
-                tool_calls: None,
+                tool_calls: ollama_tool_calls,
                 tool_call_id: m.tool_call_id.clone(),
             }
         })
@@ -241,6 +263,11 @@ impl LlmBackend for OllamaClient {
             .await
             .map_err(|e| BackendError::Transport(e.to_string()))?;
 
+        tracing::debug!(
+            raw_response = %String::from_utf8_lossy(&raw_bytes),
+            "ollama complete() raw response"
+        );
+
         let ollama_resp: crate::ollama::types::OllamaChatChunk = serde_json::from_slice(&raw_bytes)
             .map_err(|e| BackendError::StreamParse(e.to_string()))?;
 
@@ -307,5 +334,61 @@ impl LlmBackend for OllamaClient {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use domain::entities::message::Message;
+    use domain::entities::model::ModelId;
+    use domain::entities::tool::ToolCall;
+
+    fn req_with_messages(messages: Vec<Message>) -> ConversationRequest {
+        ConversationRequest {
+            id: uuid::Uuid::new_v4(),
+            model: ModelId::new("test"),
+            messages,
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            tool_definitions: vec![],
+        }
+    }
+
+    #[test]
+    fn domain_messages_serializes_tool_calls_on_assistant_message() {
+        let call = ToolCall::new("call_1", "list_dir", r#"{"path":"."}"#);
+        let msg = Message::assistant_with_tool_calls(vec![call]);
+        let req = req_with_messages(vec![msg]);
+
+        let ollama = domain_messages(&req);
+        assert_eq!(ollama.len(), 1);
+        let tool_calls = ollama[0]
+            .tool_calls
+            .as_ref()
+            .expect("tool_calls must be set");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].function.name, "list_dir");
+        assert_eq!(tool_calls[0].function.arguments["path"], ".");
+    }
+
+    #[test]
+    fn domain_messages_plain_assistant_has_no_tool_calls() {
+        let msg = Message::assistant("hello");
+        let req = req_with_messages(vec![msg]);
+
+        let ollama = domain_messages(&req);
+        assert!(ollama[0].tool_calls.is_none());
+    }
+
+    #[test]
+    fn domain_messages_tool_result_carries_tool_call_id() {
+        let msg = Message::tool_result("call_1", "[dir] src/\n[file] Cargo.toml");
+        let req = req_with_messages(vec![msg]);
+
+        let ollama = domain_messages(&req);
+        assert_eq!(ollama[0].tool_call_id.as_deref(), Some("call_1"));
+        assert!(ollama[0].tool_calls.is_none());
     }
 }

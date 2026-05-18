@@ -223,6 +223,10 @@ src/main.rs  |  gateway.toml
 - `domain/ports/tool_runtime.rs` — `ToolRuntime::definition()` ✅: every tool advertises its own JSON Schema; gateway injects all tool definitions on every request (Zed-sent tools ignored)
 - `api/openai/chat.rs` + `responses.rs` ✅: tool loop result streamed as SSE (was returning `application/json`, invisible to Zed UI)
 - `gateway.toml` — `workspace_root` ✅: configurable workspace confinement root; included in system prompt so model uses relative paths
+- `infrastructure/ollama/client.rs` — `domain_messages()` ✅: assistant messages with tool calls now serialize `tool_calls` to Ollama; previously sent empty content with no `tool_calls` field causing Ollama to stall (502) on pass 2
+- `application/prompt/system_prompt.rs` ✅: tool-use rules appended to existing Zed system message (was silently skipped when Zed sent its own system message, leaving model with no tool instructions)
+- `api/openai/chat.rs` ✅: `apply_pipeline()` called before tool loop so system prompt injection reaches the model (tool loop bypasses `ChatService.prepare()`)
+- `src/main.rs` — `GATEWAY_WORKSPACE_ROOT` env var ✅: figment config now correctly maps `GATEWAY_WORKSPACE_ROOT` → `workspace_root` (was broken by `split("_")` mapping it to nested key `workspace.root`); startup log confirms active workspace root
 
 *Two-registry plumbing:*
 - `application/tool_loop`: `ToolLoopOrchestrator` gains `McpToolRegistry` field (empty for now); resolution order: native first, MCP second
@@ -250,6 +254,9 @@ crates/api/tests/native_tools.rs
 - `ListTool` returns `ToolError::Unauthorized` on paths outside workspace ✅
 - Tool loop response streamed as SSE to Zed ✅
 - `workspace_root` configurable in `gateway.toml` ✅
+- `GATEWAY_WORKSPACE_ROOT` env var correctly overrides `workspace_root` at runtime ✅
+- Tool definitions injected with system prompt visible to model (Zed system message preserved + appended) ✅
+- Zed agent chat: `list_dir` tool executes and returns directory listing end-to-end ✅
 - `FileWriteTool` creates and overwrites files; rejects `../` traversal
 - `FileEditTool` applies a valid unified diff; returns error on malformed patch
 - `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`

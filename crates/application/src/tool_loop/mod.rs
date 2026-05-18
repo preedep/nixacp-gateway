@@ -65,7 +65,7 @@ impl ToolLoopOrchestrator {
                     .cloned();
                 let call = call.clone();
                 dispatches.push(async move {
-                    match runtime {
+                    let result = match runtime {
                         Some(rt) => match rt.execute(&call).await {
                             Ok(result) => result,
                             Err(e) => ToolResult::err(call.id.clone(), e),
@@ -74,7 +74,14 @@ impl ToolLoopOrchestrator {
                             call.id.clone(),
                             ToolError::NotFound(call.function.name.clone()),
                         ),
-                    }
+                    };
+                    tracing::debug!(
+                        tool = %call.function.name,
+                        args = %call.function.arguments,
+                        result = %result.content.as_str(),
+                        "tool executed"
+                    );
+                    result
                 });
             }
 

@@ -33,6 +33,16 @@ impl ChatService {
         }
     }
 
+    /// Apply prompt pipeline transforms (system prompt injection, quirks) without compression.
+    /// Used by callers that manage their own conversation loop (e.g. tool loop).
+    pub fn apply_pipeline(
+        &self,
+        model: &str,
+        messages: Vec<domain::entities::message::Message>,
+    ) -> Vec<domain::entities::message::Message> {
+        self.pipeline.transform(model, messages)
+    }
+
     fn prepare(&self, mut req: ConversationRequest) -> ConversationRequest {
         req.messages = self.pipeline.transform(req.model.as_str(), req.messages);
         let budget = req.max_tokens.unwrap_or(DEFAULT_CONTEXT_BUDGET);

@@ -15,9 +15,22 @@ use tokio::net::TcpListener;
 fn main() -> anyhow::Result<()> {
     // Config is extracted before the subscriber is initialised: the subscriber
     // format (json/text) comes from config, so the order cannot be reversed.
+    // split("_") maps GATEWAY_LOG_LEVEL → log.level (nested).
+    // GATEWAY_WORKSPACE_ROOT would split to workspace.root (wrong — the key is
+    // flat workspace_root), so we remap it explicitly before the split layer.
     let config: api::state::Config = Figment::new()
         .merge(Toml::file("gateway.toml"))
-        .merge(Env::prefixed("GATEWAY_").split("_"))
+        .merge(Env::prefixed("GATEWAY_").split("_").only(&[
+            "log_level",
+            "log_format",
+            "server_host",
+            "server_port",
+        ]))
+        .merge(
+            Env::prefixed("GATEWAY_")
+                .only(&["WORKSPACE_ROOT"])
+                .map(|_| "workspace_root".into()),
+        )
         .extract()
         .context("failed to load config from gateway.toml")?;
 
@@ -48,6 +61,13 @@ async fn async_main(config: api::state::Config) -> anyhow::Result<()> {
         startup_log = startup_log.with_app_version(v);
     }
     startup_log.emit();
+
+    StdAppLog::app(
+        LogLevel::Info,
+        format!("workspace_root = {}", config.workspace_root),
+    )
+    .with_code_location("main")
+    .emit();
 
     let state = Arc::new(AppState::new(config).context("failed to initialise AppState")?);
     let router = build_router(state.clone());
