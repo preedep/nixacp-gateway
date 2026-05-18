@@ -203,7 +203,7 @@ src/main.rs  |  gateway.toml
 
 ---
 
-## Phase 7a — Native Tools Expansion
+## Phase 7a — Native Tools Expansion ⚙️ IN PROGRESS
 
 **Duration:** Weeks 14–15 | **Perf:** none (correctness only)  
 **Decision:** [ADR-003](architecture/adr-003-tool-strategy-native-plus-mcp.md)
@@ -213,10 +213,16 @@ src/main.rs  |  gateway.toml
 **Deliverables:**
 
 *New native tools:*
-- `infrastructure/tools/find.rs` — `FindTool`: recursive directory listing with workspace confinement; supports glob pattern and max-depth
+- `infrastructure/tools/find.rs` — `FindTool` ✅: recursive file search by glob pattern with workspace confinement; `max_depth` support
+- `infrastructure/tools/find.rs` — `ListTool` ✅: immediate directory listing, `[dir]/[file]` prefixes, sorted output
 - `infrastructure/tools/file_write.rs` — `FileWriteTool`: create or overwrite a file inside workspace root; rejects paths outside workspace via `canonicalize`
 - `infrastructure/tools/file_edit.rs` — `FileEditTool`: apply a unified diff patch to an existing file; uses `similar` crate for patch application
 - `infrastructure/tools/bash.rs` — `BashTool`: allowlist-only shell execution; denies `;`, `|`, `&&`, `||`, `>`, `<`, `` ` ``, `$(...)`; 30-second timeout; working directory locked to workspace root
+
+*Tool infrastructure (completed as part of 7a):*
+- `domain/ports/tool_runtime.rs` — `ToolRuntime::definition()` ✅: every tool advertises its own JSON Schema; gateway injects all tool definitions on every request (Zed-sent tools ignored)
+- `api/openai/chat.rs` + `responses.rs` ✅: tool loop result streamed as SSE (was returning `application/json`, invisible to Zed UI)
+- `gateway.toml` — `workspace_root` ✅: configurable workspace confinement root; included in system prompt so model uses relative paths
 
 *Two-registry plumbing:*
 - `application/tool_loop`: `ToolLoopOrchestrator` gains `McpToolRegistry` field (empty for now); resolution order: native first, MCP second
@@ -227,24 +233,27 @@ src/main.rs  |  gateway.toml
 - `api/state.rs`: parse `ToolsConfig`, wire `BashTool` only when `enabled = true`
 
 *Tests:*
-- Unit tests for each new tool: path traversal rejection, allowlist enforcement, diff apply
+- Unit tests for each new tool: path traversal rejection, allowlist enforcement, diff apply ✅ (15 tests for FindTool/ListTool)
 - Integration test `tests/native_tools.rs`: write → read → bash loop via Axum router + wiremock
 
 **Key files:**
 ```
 crates/infrastructure/src/tools/{find,file_write,file_edit,bash}.rs
+crates/domain/src/ports/tool_runtime.rs
 crates/application/src/tool_loop/mod.rs
-crates/domain/src/ports/tool_registry.rs
 gateway.toml
 crates/api/tests/native_tools.rs
 ```
 
 **Exit criteria:**
-- `FindTool` returns `ToolError::Unauthorized` on paths outside workspace
+- `FindTool` returns `ToolError::Unauthorized` on paths outside workspace ✅
+- `ListTool` returns `ToolError::Unauthorized` on paths outside workspace ✅
+- Tool loop response streamed as SSE to Zed ✅
+- `workspace_root` configurable in `gateway.toml` ✅
 - `FileWriteTool` creates and overwrites files; rejects `../` traversal
 - `FileEditTool` applies a valid unified diff; returns error on malformed patch
 - `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`
-- `cargo test --workspace` passes (0 warnings)
+- `cargo test --workspace` passes (0 warnings) ✅ (175 tests)
 
 ---
 

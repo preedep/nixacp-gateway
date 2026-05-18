@@ -145,3 +145,23 @@ args    = ["-y", "@modelcontextprotocol/server-fetch"]
   is registered but empty; native tools work as today.
 - Related: [[adr-001-acp-sdk]] — the ACP SDK (`rmcp`) exposes an MCP server capability flag;
   Phase 7 wires the `McpToolRegistry` through that same `rmcp` infrastructure.
+
+---
+
+## Implementation notes (Phase 7a partial delivery)
+
+The following was delivered ahead of the full Phase 7a schedule:
+
+**`ToolRuntime::definition()`** — added to the `ToolRuntime` trait in `domain/ports/tool_runtime.rs`.
+Each tool now returns its own `ToolDefinition` with a complete JSON Schema. The gateway injects
+all registered tool definitions into every request regardless of what Zed sends — Zed's own editor
+tools (`edit_file`, `create_file`, etc.) are silently dropped.
+
+**Tool loop SSE streaming** — `tool_loop_response()` in `api/openai/chat.rs` and
+`responses_tool_loop()` in `api/openai/responses.rs` now emit the final answer as SSE
+(`text/event-stream`) instead of a JSON blob. This is required for Zed's chat UI to render
+the result.
+
+**`workspace_root` config** — `gateway.toml` now has a top-level `workspace_root` key.
+All tools are confined to this path. The system prompt includes the root so the model uses
+relative paths rather than absolute paths from Zed's file context.

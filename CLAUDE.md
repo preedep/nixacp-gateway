@@ -47,7 +47,7 @@ nixacp-gateway/
 │   │       ├── openai/         # OpenAI-compat passthrough (Phase 7)
 │   │       ├── acp/            # AcpSessionStore — DashMap + broadcast channel + 30-min TTL (Phase 5)
 │   │       └── tools/          # ToolRegistry, ToolExecutor, ToolCallNormalizer,
-│   │                           #   FileReadTool, SearchTool
+│   │                           #   FileReadTool, SearchTool, FindTool, ListTool
 │   ├── api/                    # HTTP server, Axum router
 │   │   └── src/
 │   │       ├── openai/         # /v1/chat/completions (tools + streaming), /v1/models
@@ -220,6 +220,14 @@ All structured logs follow [Standard Application Log v1.0](https://github.com/pr
 | `REQ_EX_LOG` | Every outgoing request to Ollama (`OllamaClient`)  |
 | `RES_EX_LOG` | Every response received from Ollama (`OllamaClient`) |
 
+### `workspace_root` (`gateway.toml`)
+
+```toml
+workspace_root = "/path/to/your/project"   # default: current working directory
+```
+
+All built-in tools (`file_read`, `search`, `find`, `list_dir`) are confined to this directory via `fs::canonicalize` — paths outside it return `ToolError::Unauthorized`. The system prompt includes this path and instructs the model to use relative paths. Override at runtime: `GATEWAY_WORKSPACE_ROOT=/other/path`.
+
 ### `[log]` config block (`gateway.toml`)
 
 ```toml
@@ -240,6 +248,17 @@ Override at runtime: `GATEWAY_LOG_FORMAT=text GATEWAY_LOG_LEVEL=debug cargo run`
 - Strip `Authorization` and `Cookie` headers before logging.
 - `correlation_id`: read from `X-Correlation-Id` header, or generate a new UUID if absent.
 - `request_id`: always a fresh UUID per request; injected into the response as `X-Request-Id`.
+
+## Built-in Tool Conventions
+
+Every tool in `infrastructure/tools/` must follow these rules:
+
+- Implement `ToolRuntime::name()` with a stable snake_case name (the model uses this as the function name).
+- Implement `ToolRuntime::definition()` with a complete JSON Schema — required fields, descriptions, and types. The model sees this schema; poor descriptions cause wrong calls.
+- Confine all filesystem access to `workspace_root` via `fs::canonicalize` + `starts_with` check. Return `ToolError::Unauthorized` if the resolved path escapes the root.
+- Never block the async executor — use `tokio::fs` for I/O and `tokio::process::Command` for subprocesses.
+- Return `ToolResult::err` for recoverable failures (not found, unauthorized). Only return `Err(ToolError::...)` for unrecoverable setup failures.
+- Tool loop always runs (gateway injects its own tools on every request). The model decides whether to call a tool; the gateway executes it. Zed's own editor tools (`edit_file`, `create_file`, etc.) are ignored — never pass them to the loop.
 
 ## Zed IDE Integration Notes
 
@@ -266,7 +285,9 @@ Development is organized in 7 phases over 6 months. See `docs/ROADMAP.md` for th
 4. Reflection/retry + cancellation hardening (Weeks 8–9) ✅ DONE
 5. ACP protocol / Zed integration (Weeks 10–11) ✅ DONE
 6. Observability + performance hot path (Weeks 12–13)
-7. MCP + multi-backend + horizontal scale (Weeks 14–26)
+7a. Native tools expansion — FindTool, ListTool ✅ PARTIAL (file_write, file_edit, bash remaining)
+7b. MCP client integration (Weeks 16–17)
+7c. Multi-backend + horizontal scale (Weeks 18–26)
 
 ## Performance Rules
 
