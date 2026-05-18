@@ -113,10 +113,7 @@ fn input_to_tool_definitions(tools: Vec<Value>) -> Vec<ToolDefinition> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_owned();
-            let parameters = t
-                .get("parameters")
-                .cloned()
-                .unwrap_or(json!({}));
+            let parameters = t.get("parameters").cloned().unwrap_or(json!({}));
             Some(ToolDefinition::function(&name, &description, parameters))
         })
         .collect()
@@ -143,10 +140,7 @@ fn extract_text(content: &Value) -> String {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 /// `POST /responses` — OpenAI Responses API, streamed back in Responses API SSE format.
-pub async fn responses_handler(
-    State(state): State<Arc<AppState>>,
-    body: Bytes,
-) -> Response {
+pub async fn responses_handler(State(state): State<Arc<AppState>>, body: Bytes) -> Response {
     let req: ResponsesRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
@@ -274,7 +268,8 @@ async fn responses_stream(
             "type": "response.output_item.added",
             "output_index": 0,
             "item": {"id": item_id, "type": "message", "role": "assistant", "content": []}
-        })).await;
+        }))
+        .await;
 
         // content part added
         send(json!({
@@ -282,7 +277,8 @@ async fn responses_stream(
             "output_index": 0,
             "content_index": 0,
             "part": {"type": "output_text", "text": ""}
-        })).await;
+        }))
+        .await;
 
         let mut full_text = String::new();
 
@@ -309,7 +305,8 @@ async fn responses_stream(
                         "output_index": 0,
                         "content_index": 0,
                         "delta": chunk.delta
-                    })).await;
+                    }))
+                    .await;
                 }
                 Err(_) => break,
             }
@@ -321,7 +318,8 @@ async fn responses_stream(
             "output_index": 0,
             "content_index": 0,
             "text": full_text
-        })).await;
+        }))
+        .await;
 
         // output item done
         send(json!({
@@ -333,7 +331,8 @@ async fn responses_stream(
                 "role": "assistant",
                 "content": [{"type": "output_text", "text": full_text}]
             }
-        })).await;
+        }))
+        .await;
 
         // response.completed
         send(json!({
@@ -350,11 +349,11 @@ async fn responses_stream(
                     "content": [{"type": "output_text", "text": full_text}]
                 }]
             }
-        })).await;
+        }))
+        .await;
     });
 
     Sse::new(ReceiverStream::new(rx))
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
         .into_response()
 }
-

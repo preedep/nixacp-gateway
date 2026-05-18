@@ -22,8 +22,8 @@ use application::reflection::ReflectionError;
 
 use super::types::{
     ApiFunctionCall, ApiToolCall, ApiToolDefinition, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice,
-    MessageContent, Usage,
+    ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice, MessageContent,
+    Usage,
 };
 
 pub async fn chat_completions(
@@ -355,9 +355,7 @@ fn build_messages(req: &ChatCompletionRequest) -> Result<Vec<Message>, AppError>
                         Message::assistant(&text)
                     }
                 }
-                "tool" => {
-                    Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &text)
-                }
+                "tool" => Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &text),
                 _ => Message::user(&text),
             }
         })

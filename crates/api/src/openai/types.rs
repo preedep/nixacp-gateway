@@ -70,9 +70,8 @@ impl Serialize for ChatMessage {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let content_str = self.content.clone().into_text();
-        let field_count = 2
-            + self.tool_call_id.is_some() as usize
-            + self.tool_calls.is_some() as usize;
+        let field_count =
+            2 + self.tool_call_id.is_some() as usize + self.tool_calls.is_some() as usize;
         let mut s = serializer.serialize_struct("ChatMessage", field_count)?;
         s.serialize_field("role", &self.role)?;
         s.serialize_field("content", &content_str)?;
