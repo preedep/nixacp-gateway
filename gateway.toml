@@ -2,6 +2,11 @@
 host = "127.0.0.1"
 port = 8080
 
+# Root directory tools (file_read, list_dir, find, search) are confined to.
+# Set this to your project directory. Defaults to the current working directory
+# if not set. Override with: GATEWAY_WORKSPACE_ROOT=/path/to/project
+workspace_root = "/Users/preedee/Projects"
+
 [log]
 format = "json"
 level = "info"

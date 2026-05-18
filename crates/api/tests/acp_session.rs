@@ -35,6 +35,10 @@ fn test_config(ollama_url: &str) -> Config {
             models: vec![],
         },
         log: LogConfig::default(),
+        workspace_root: std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
     }
 }
 

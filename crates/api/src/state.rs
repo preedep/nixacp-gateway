@@ -58,6 +58,15 @@ pub struct Config {
     pub ollama: OllamaConfig,
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default = "default_workspace_root")]
+    pub workspace_root: String,
+}
+
+fn default_workspace_root() -> String {
+    std::env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 impl Default for LogConfig {
@@ -100,17 +109,23 @@ impl AppState {
         // once here so the first request pays no initialisation cost.
         let counter = Arc::new(TiktokenCounter::new());
 
+        let workspace_root = std::path::PathBuf::from(&config.workspace_root);
+
+        let system_prompt = format!(
+            "You are a coding assistant with tool access. \
+            The workspace root is: {workspace_root}. \
+            RULES (follow exactly, no exceptions): \
+            1. When asked about files or directories, call list_dir or find IMMEDIATELY. Do NOT describe what you will do first. \
+            2. When asked to read a file, call file_read IMMEDIATELY. \
+            3. When asked to search code, call search IMMEDIATELY. \
+            4. ALWAYS use relative paths from the workspace root (e.g. \"src/main.rs\", not absolute paths). \
+            5. NEVER write shell commands like `ls` or `cat` as text. Call the tool instead. \
+            6. NEVER say 'Let me...' or 'I will...' before a tool call. Just call the tool. \
+            Available tools: file_read, search, find, list_dir.",
+            workspace_root = workspace_root.display()
+        );
         let pipeline = PromptPipeline::new(
-            SystemPromptBuilder::with_default(
-                "You are a coding assistant with tool access. \
-                RULES (follow exactly, no exceptions): \
-                1. When asked about files or directories, call list_dir or find IMMEDIATELY. Do NOT describe what you will do first. \
-                2. When asked to read a file, call file_read IMMEDIATELY. \
-                3. When asked to search code, call search IMMEDIATELY. \
-                4. NEVER write out shell commands like `ls` or `cat` as text. Call the tool instead. \
-                5. NEVER say 'Let me...' or 'I will...' before a tool call. Just call the tool. \
-                Available tools: file_read, search, find, list_dir.",
-            ),
+            SystemPromptBuilder::with_default(system_prompt),
             ModelQuirksTransformer,
         );
         let compression = CompressionService::new(
@@ -120,12 +135,11 @@ impl AppState {
 
         let chat = ChatService::new(ollama.clone(), pipeline, compression, counter);
 
-        let workspace_root = std::env::current_dir().unwrap_or_default();
         let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
             Arc::new(FileReadTool::new(workspace_root.clone())),
             Arc::new(SearchTool::new(workspace_root.clone(), "rg")),
             Arc::new(FindTool::new(workspace_root.clone())),
-            Arc::new(ListTool::new(workspace_root)),
+            Arc::new(ListTool::new(workspace_root.clone())),
         ];
         let tool_loop = ToolLoopOrchestrator::new(ollama.clone(), built_in_tools);
         let reflection = ReflectionOrchestrator::new(ollama);
