@@ -103,12 +103,12 @@ Point Zed's OpenAI-compatible provider at the gateway:
 # Build
 cargo build --workspace
 
-# Run all tests (144 tests across all crates)
+# Run all tests (147 tests across all crates)
 cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p domain          # 39 tests
-cargo test -p application     # 30 tests
+cargo test -p application     # 33 tests
 cargo test -p infrastructure  # 57 tests
 cargo test -p api             # 14 tests
 
