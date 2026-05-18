@@ -22,7 +22,8 @@ use application::reflection::ReflectionError;
 
 use super::types::{
     ApiFunctionCall, ApiToolCall, ApiToolDefinition, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice, Usage,
+    ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice,
+    MessageContent, Usage,
 };
 
 pub async fn chat_completions(
@@ -30,8 +31,27 @@ pub async fn chat_completions(
     Json(req): Json<ChatCompletionRequest>,
 ) -> Result<Response, AppError> {
     let messages = build_messages(&req)?;
-    let tool_definitions = build_tool_definitions(&req.tools);
-    let has_tools = !req.tools.is_empty();
+
+    // Only engage the tool loop for tools we actually have registered.
+    // Zed sends its own editor tools (edit_file, create_file, etc.) which we
+    // cannot execute — passing them through would cause tool-loop failures.
+    let registered_names: Vec<&str> = state.tool_loop.tool_names().collect();
+    if !req.tools.is_empty() {
+        let incoming: Vec<&str> = req.tools.iter().map(|t| t.function.name.as_str()).collect();
+        tracing::debug!(
+            incoming_tools = ?incoming,
+            registered_tools = ?registered_names,
+            "chat_completions: filtering tools"
+        );
+    }
+    let our_tools: Vec<_> = req
+        .tools
+        .iter()
+        .filter(|t| registered_names.contains(&t.function.name.as_str()))
+        .cloned()
+        .collect();
+    let has_our_tools = !our_tools.is_empty();
+    let tool_definitions = build_tool_definitions(&our_tools);
 
     let domain_req = ConversationRequest {
         id: Uuid::new_v4(),
@@ -47,7 +67,7 @@ pub async fn chat_completions(
     // drains all in-flight requests at once (graceful shutdown).
     let request_cancel = state.gateway_cancel.child_token();
 
-    if has_tools {
+    if has_our_tools {
         tool_loop_response(state, domain_req, req.model).await
     } else if req.stream.unwrap_or(true) {
         stream_response(state, domain_req, req.model, request_cancel).await
@@ -90,14 +110,14 @@ async fn tool_loop_response(
             .collect();
         ChatMessage {
             role: "assistant".to_owned(),
-            content: String::new(),
+            content: MessageContent::Text(String::new()),
             tool_call_id: None,
             tool_calls: Some(api_calls),
         }
     } else {
         ChatMessage {
             role: "assistant".to_owned(),
-            content: resp.content,
+            content: MessageContent::Text(resp.content),
             tool_call_id: None,
             tool_calls: None,
         }
@@ -283,7 +303,7 @@ async fn complete_response(
             index: 0,
             message: ChatMessage {
                 role: "assistant".to_owned(),
-                content: resp.content,
+                content: MessageContent::Text(resp.content),
                 tool_call_id: None,
                 tool_calls: None,
             },
@@ -320,21 +340,26 @@ fn build_messages(req: &ChatCompletionRequest) -> Result<Vec<Message>, AppError>
     Ok(req
         .messages
         .iter()
-        .map(|m| match m.role.as_str() {
-            "system" => Message::system(&m.content),
-            "assistant" => {
-                if let Some(ref calls) = m.tool_calls {
-                    let domain_calls = calls
-                        .iter()
-                        .map(|c| ToolCall::new(&c.id, &c.function.name, &c.function.arguments))
-                        .collect();
-                    Message::assistant_with_tool_calls(domain_calls)
-                } else {
-                    Message::assistant(&m.content)
+        .map(|m| {
+            let text = m.content_text();
+            match m.role.as_str() {
+                "system" => Message::system(&text),
+                "assistant" => {
+                    if let Some(ref calls) = m.tool_calls {
+                        let domain_calls = calls
+                            .iter()
+                            .map(|c| ToolCall::new(&c.id, &c.function.name, &c.function.arguments))
+                            .collect();
+                        Message::assistant_with_tool_calls(domain_calls)
+                    } else {
+                        Message::assistant(&text)
+                    }
                 }
+                "tool" => {
+                    Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &text)
+                }
+                _ => Message::user(&text),
             }
-            "tool" => Message::tool_result(m.tool_call_id.as_deref().unwrap_or(""), &m.content),
-            _ => Message::user(&m.content),
         })
         .collect())
 }
@@ -346,6 +371,7 @@ mod tests {
 
     use super::super::types::{
         ApiFunctionCall, ApiFunctionDefinition, ApiToolCall, ApiToolDefinition, ChatMessage,
+        MessageContent,
     };
 
     // --- build_messages ---
@@ -369,7 +395,7 @@ mod tests {
             model: "test".into(),
             messages: vec![ChatMessage {
                 role: "system".into(),
-                content: "you are helpful".into(),
+                content: MessageContent::Text("you are helpful".into()),
                 tool_call_id: None,
                 tool_calls: None,
             }],
@@ -389,13 +415,13 @@ mod tests {
             messages: vec![
                 ChatMessage {
                     role: "user".into(),
-                    content: "hello".into(),
+                    content: MessageContent::Text("hello".into()),
                     tool_call_id: None,
                     tool_calls: None,
                 },
                 ChatMessage {
                     role: "tool".into(),
-                    content: "file contents".into(),
+                    content: MessageContent::Text("file contents".into()),
                     tool_call_id: Some("call_abc".into()),
                     tool_calls: None,
                 },
@@ -417,7 +443,7 @@ mod tests {
             model: "test".into(),
             messages: vec![ChatMessage {
                 role: "assistant".into(),
-                content: String::new(),
+                content: MessageContent::Text(String::new()),
                 tool_call_id: None,
                 tool_calls: Some(vec![ApiToolCall {
                     id: "call_1".into(),
@@ -505,7 +531,7 @@ mod tests {
     fn chat_message_with_tool_calls_serde_round_trip() {
         let msg = ChatMessage {
             role: "assistant".into(),
-            content: String::new(),
+            content: MessageContent::Text(String::new()),
             tool_call_id: None,
             tool_calls: Some(vec![ApiToolCall {
                 id: "c1".into(),
@@ -527,21 +553,21 @@ mod tests {
     fn chat_message_tool_result_serde_round_trip() {
         let msg = ChatMessage {
             role: "tool".into(),
-            content: "result".into(),
+            content: MessageContent::Text("result".into()),
             tool_call_id: Some("call_xyz".into()),
             tool_calls: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: ChatMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(back.tool_call_id.as_deref(), Some("call_xyz"));
-        assert_eq!(back.content, "result");
+        assert_eq!(back.content_text(), "result");
     }
 
     #[test]
     fn chat_message_omits_optional_fields_when_none() {
         let msg = ChatMessage {
             role: "user".into(),
-            content: "hi".into(),
+            content: MessageContent::Text("hi".into()),
             tool_call_id: None,
             tool_calls: None,
         };

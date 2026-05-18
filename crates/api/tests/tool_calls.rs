@@ -87,7 +87,7 @@ fn openai_request_body() -> Value {
             {
                 "type": "function",
                 "function": {
-                    "name": "read_file",
+                    "name": "file_read",
                     "description": "Read a file from the workspace",
                     "parameters": {
                         "type": "object",
@@ -262,7 +262,7 @@ async fn tool_loop_returns_tool_calls_when_max_passes_exhausted() {
         .and(path("/api/chat"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_string(ollama_tool_call_body("read_file", json!({"path": "x.rs"}))),
+                .set_body_string(ollama_tool_call_body("file_read", json!({"path": "x.rs"}))),
         )
         .mount(&mock_server)
         .await;
@@ -278,7 +278,7 @@ async fn tool_loop_returns_tool_calls_when_max_passes_exhausted() {
         "tools": [{
             "type": "function",
             "function": {
-                "name": "read_file",
+                "name": "file_read",
                 "description": "Read",
                 "parameters": { "type": "object" }
             }

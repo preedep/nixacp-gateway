@@ -151,10 +151,10 @@ cargo check --workspace
 
 ### Test commands summary
 ```bash
-cargo test --workspace                        # all unit + integration tests (160 tests)
+cargo test --workspace                        # all unit + integration tests (162 tests)
 cargo test -p domain                          # domain unit tests only (39 tests)
 cargo test -p application                     # application unit tests only (36 tests)
-cargo test -p infrastructure                  # infrastructure unit tests (57 tests)
+cargo test -p infrastructure                  # infrastructure unit tests (64 tests)
 cargo test -p api                             # api unit + integration tests (19 tests)
 cargo test -p api --test tool_calls           # tool-call integration tests only
 cargo bench --workspace                       # all benchmarks

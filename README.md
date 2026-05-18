@@ -16,16 +16,35 @@ An OpenAI-compatible streaming gateway for local coding LLMs (Ollama / Qwen / De
 
 ## Features
 
-- **OpenAI-compatible API** — `/v1/chat/completions` (streaming SSE + non-streaming) and `/v1/models`
+- **OpenAI-compatible API** — `/v1/chat/completions` (streaming SSE + non-streaming), `/v1/models`, and `/v1/responses` (OpenAI Responses API translated to Chat Completions); all routes also served without the `/v1` prefix for Zed 1.2.6+ compatibility
 - **ACP endpoint** — `POST /acp` speaks JSON-RPC 2.0 per the Agent Client Protocol; handles `initialize`, `session/new`, `session/prompt`, and `session/close`; session history persisted in-memory with 30-min TTL
 - **Ollama backend** — proxies to any remote or local Ollama instance
 - **Prompt pipeline** — `SystemPromptBuilder`, `ModelQuirksTransformer`, and per-model prompt optimisation
 - **Context compression** — sliding-window compressor keeps conversations within the model's token limit; pluggable strategy via trait
-- **Tool calls** — full OpenAI function-calling round-trip; `ToolLoopOrchestrator` detects → dispatches → injects → resubmits (max 5 iterations); built-in `FileReadTool` and `SearchTool`
+- **Tool calls** — full OpenAI function-calling round-trip; `ToolLoopOrchestrator` detects → dispatches → injects → resubmits (max 5 iterations); built-in `FileReadTool` (`file_read`) and `SearchTool` (`search`); unknown tools (e.g. Zed's editor tools) are silently filtered so the model is never asked to call tools it cannot execute
 - **Tool-call normalisation** — translates between OpenAI format and model-native formats (Qwen2.5, DeepSeek, bare JSON)
 - **Structured logging** — [Standard Application Log v1.0](https://github.com/preedep/standard-app-log/blob/main/README.md) with configurable JSON / text output
 - **Layered config** — `gateway.toml` overridden by `GATEWAY_*` environment variables
 - **Custom Tokio runtime** — physical-core worker threads, 512 KB stacks, 64 blocking threads
+
+## Gateway vs. Direct Ollama
+
+| | Direct Ollama | NixACP Gateway |
+|---|---|---|
+| **Latency overhead** | Zero | ~1–5 ms (local) |
+| **Protocol translation** | ❌ Zed must speak Ollama API | ✅ Accepts OpenAI + Responses API, translates to Ollama |
+| **Tool-call normalisation** | ❌ Raw model output (often malformed) | ✅ Qwen2.5 / DeepSeek / bare-JSON formats all handled |
+| **Unknown tool filtering** | ❌ Model sees Zed's editor tools it can't execute | ✅ Stripped before reaching the model |
+| **Context compression** | ❌ Hard error when context exceeds token limit | ✅ Sliding-window compressor keeps within limit automatically |
+| **Prompt optimisation** | ❌ Raw user prompt | ✅ System prompt builder + model-quirks transformer |
+| **Structured logging** | ❌ No visibility | ✅ Correlation IDs, request/response timing, JSON or text |
+| **Config hot-swap** | ❌ Must update every client (Zed, curl, agent) | ✅ Change `gateway.toml`; all clients unaffected |
+| **Multi-backend routing** | ❌ One model per client config | ✅ Phase 7: route by task type, capability, or model tag |
+| **MCP server support** | ❌ | ✅ Phase 7 |
+
+**When direct Ollama is fine:** simple one-off curl tests, inline code completions where sub-100 ms latency matters, models that produce clean OpenAI-format output.
+
+**When the gateway pays off:** long chat sessions (compression), Zed agent mode (protocol + tool translation), multi-model setups, any situation where you need observability or want to swap models without reconfiguring clients.
 
 ## Prerequisites
 
@@ -207,13 +226,13 @@ data: {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"...","up
 # Build
 cargo build --workspace
 
-# Run all tests (160 tests across all crates)
+# Run all tests (162 tests across all crates)
 cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p domain          # 39 tests
 cargo test -p application     # 36 tests
-cargo test -p infrastructure  # 62 tests
+cargo test -p infrastructure  # 64 tests
 cargo test -p api             # 19 tests
 
 # Run a single test by name

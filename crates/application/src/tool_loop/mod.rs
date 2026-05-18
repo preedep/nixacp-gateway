@@ -28,6 +28,10 @@ impl ToolLoopOrchestrator {
         Self { backend, tools }
     }
 
+    pub fn tool_names(&self) -> impl Iterator<Item = &str> {
+        self.tools.iter().map(|t| t.name())
+    }
+
     pub async fn run(
         &self,
         mut request: ConversationRequest,
