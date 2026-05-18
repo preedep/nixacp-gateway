@@ -45,14 +45,14 @@ nixacp-gateway/
 │   │       ├── ollama/         # OllamaClient — LlmBackend impl, NDJSON stream
 │   │       ├── token_counter/  # TiktokenCounter — cl100k_base, OnceLock BPE init
 │   │       ├── openai/         # OpenAI-compat passthrough (Phase 7)
-│   │       ├── acp/            # ACP protocol adapter (Phase 5)
+│   │       ├── acp/            # AcpSessionStore — DashMap + broadcast channel + 30-min TTL (Phase 5)
 │   │       └── tools/          # ToolRegistry, ToolExecutor, ToolCallNormalizer,
 │   │                           #   FileReadTool, SearchTool
 │   ├── api/                    # HTTP server, Axum router
 │   │   └── src/
 │   │       ├── openai/         # /v1/chat/completions (tools + streaming), /v1/models
 │   │       ├── middleware/     # request/response logging (StdAppLog)
-│   │       ├── acp/            # ACP endpoints (Phase 5)
+│   │       ├── acp/            # POST /acp (JSON-RPC 2.0) + GET /acp/events (SSE) (Phase 5)
 │   │       ├── state.rs        # AppState, Config, LogConfig; wires ChatService + ToolLoopOrchestrator
 │   │       ├── error.rs        # AppError → OpenAI error JSON
 │   │       └── server.rs       # build_router
@@ -174,9 +174,9 @@ Workflow: `.github/workflows/ci.yaml` — runs on push/PR to `main` and `develop
 **Known constraints — do not regress these:**
 - `cargo fmt --all` must be run before every commit. The CI rustfmt (1.86) and local rustfmt may format differently; always let CI be the authority.
 - `cargo clippy --workspace --all-targets -- -D warnings` must be clean. Fix all warnings; never silence with `#[allow(...)]` unless there is no correct alternative.
-- `wiremock` is pinned to `0.6.2` in `Cargo.lock` — 0.6.3+ uses let-chain syntax requiring Rust 1.88+.
+- `wiremock` is pinned to `0.6.2` in `Cargo.lock` — 0.6.3+ uses let-chain syntax requiring Rust 1.88+ (now our MSRV, so this constraint is lifted but the pin remains for stability).
 - `ripgrep` (`rg`) is installed in CI via `apt-get`/`brew`. `SearchTool` tests that invoke `rg` guard themselves with `rg_available()` so they skip gracefully in environments without it.
-- MSRV is `1.86`. Transitive dependencies must not require a newer compiler — check with `cargo check --workspace` on 1.86 before bumping any dep.
+- MSRV is `1.88`. Transitive dependencies must not require a newer compiler — check with `cargo check --workspace` on 1.88 before bumping any dep. (Bumped from 1.86 when `agent-client-protocol-schema 0.13.2` pulled in `serde_with ≥3.18` and `darling 0.23` which require 1.88.)
 
 ## Coding Conventions
 

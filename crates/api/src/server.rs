@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 
-use crate::acp::handler::acp_rpc;
+use crate::acp::handler::{acp_events, acp_rpc};
 use crate::middleware::logging::log_request_response;
 use crate::openai::{chat::chat_completions, models::list_models};
 use crate::state::AppState;
@@ -16,6 +16,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/models", get(list_models))
         .route("/acp", post(acp_rpc))
+        .route("/acp/events", get(acp_events))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             log_request_response,

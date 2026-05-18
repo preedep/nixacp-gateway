@@ -29,7 +29,7 @@ An OpenAI-compatible streaming gateway for local coding LLMs (Ollama / Qwen / De
 
 ## Prerequisites
 
-- Rust 1.86+ (MSRV)
+- Rust 1.88+ (MSRV)
 - An [Ollama](https://ollama.com) instance with at least one model pulled
 
 ## Quick Start
@@ -102,23 +102,39 @@ Point Zed's OpenAI-compatible provider at the gateway:
 
 ### ACP agent panel (Phase 5)
 
-The gateway exposes an ACP endpoint at `POST http://127.0.0.1:8080/acp`.
+The gateway exposes two ACP endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `POST /acp` | JSON-RPC 2.0 | `initialize`, `session/new`, `session/prompt`, `session/close` |
+| `GET /acp/events?session_id=<id>` | SSE | Streaming `session/update` notifications (one per token delta) |
+
+**Usage flow:**
 
 ```bash
-# Initialize
+# 1. Initialize
 curl -s http://127.0.0.1:8080/acp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}'
 
-# Create a session
-curl -s http://127.0.0.1:8080/acp \
+# 2. Create a session
+SESSION_ID=$(curl -s http://127.0.0.1:8080/acp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['sessionId'])")
 
-# Send a prompt (use the sessionId from the response above)
+# 3. Open SSE stream (in a separate terminal) to receive streaming output
+curl -N "http://127.0.0.1:8080/acp/events?session_id=${SESSION_ID}"
+
+# 4. Send a prompt — content streams via SSE, stopReason returned in HTTP response
 curl -s http://127.0.0.1:8080/acp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"<id>","prompt":[{"type":"text","text":"Hello"}]}}'
+  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"${SESSION_ID}\",\"prompt\":[{\"type\":\"text\",\"text\":\"Hello, what are you?\"}]}}"
+```
+
+Each SSE event on `/acp/events` is a JSON-RPC 2.0 notification:
+```
+data: {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"...","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello"}}}}
 ```
 
 ## Development

@@ -36,12 +36,12 @@ agent-client-protocol-schema = "0.13.2"
 |---|---|---|
 | Wire types | ~400 LOC to write + maintain | Zero — schema crate provides all types |
 | Protocol correctness | Risk of drift from spec | SDK tracks spec by design |
-| MSRV compatibility | N/A | Verified: compiles clean on Rust 1.86 |
+| MSRV compatibility | N/A | Originally verified on Rust 1.86; after adding the schema crate, transitive deps (`serde_with ≥3.18`, `darling 0.23`) raised effective MSRV to 1.88 — workspace `rust-version` bumped accordingly |
 | Dependency surface | None | Adds ~8 transitive deps (all already used: tokio, serde, uuid, futures) |
 | ACP spec stability | Spec is actively evolving | SDK absorbs breaking changes behind a versioned API |
 | Zed compatibility | Must track Zed's version manually | SDK is from the same org that maintains the spec |
 
-The SDK was published 2026-05-17 (one day before this decision), is at 0.12.1, and compiles cleanly with our Rust 1.86 toolchain and existing dependency graph.
+The SDK was published 2026-05-17 (one day before this decision). As of `agent-client-protocol-schema 0.13.2`, transitive dependencies (`serde_with 3.18+`, `darling 0.23`) raised the effective MSRV to Rust 1.88; the workspace `rust-version` was updated accordingly.
 
 ---
 

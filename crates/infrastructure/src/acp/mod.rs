@@ -4,14 +4,21 @@ use std::time::{Duration, Instant};
 use agent_client_protocol_schema::{NewSessionResponse, SessionId};
 use dashmap::DashMap;
 use domain::entities::message::Message;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 const SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+
+/// Capacity of the per-session notification broadcast channel.
+const NOTIFY_CAPACITY: usize = 64;
 
 struct SessionEntry {
     history: Vec<Message>,
     last_access: Instant,
     cwd: std::path::PathBuf,
+    /// Broadcast channel for `session/update` SSE notifications.
+    /// Each item is a pre-serialised JSON-RPC notification string.
+    notify_tx: broadcast::Sender<String>,
 }
 
 /// In-memory ACP session store backed by DashMap with 30-minute TTL.
@@ -29,16 +36,36 @@ impl AcpSessionStore {
     /// Create a new session and return its ID plus the SDK `NewSessionResponse`.
     pub fn create_session(&self, cwd: std::path::PathBuf) -> (SessionId, NewSessionResponse) {
         let id = SessionId::new(Uuid::new_v4().to_string());
+        let (notify_tx, _) = broadcast::channel(NOTIFY_CAPACITY);
         self.sessions.insert(
             id.clone(),
             SessionEntry {
                 history: Vec::new(),
                 last_access: Instant::now(),
                 cwd,
+                notify_tx,
             },
         );
         let response = NewSessionResponse::new(id.clone());
         (id, response)
+    }
+
+    /// Subscribe to `session/update` notifications for a session.
+    ///
+    /// Returns `None` if the session does not exist.
+    pub fn subscribe(&self, session_id: &SessionId) -> Option<broadcast::Receiver<String>> {
+        self.sessions
+            .get(session_id)
+            .map(|entry| entry.notify_tx.subscribe())
+    }
+
+    /// Publish a pre-serialised JSON-RPC notification string to all SSE subscribers.
+    ///
+    /// Silently drops if there are no subscribers or the session is unknown.
+    pub fn publish(&self, session_id: &SessionId, notification: String) {
+        if let Some(entry) = self.sessions.get(session_id) {
+            let _ = entry.notify_tx.send(notification);
+        }
     }
 
     /// Append messages to a session's history.
@@ -127,5 +154,22 @@ mod tests {
         let (id, _) = store.create_session("/tmp".into());
         store.evict_expired();
         assert!(store.snapshot(&id).is_some());
+    }
+
+    #[tokio::test]
+    async fn publish_received_by_subscriber() {
+        let store = AcpSessionStore::new();
+        let (id, _) = store.create_session("/tmp".into());
+        let mut rx = store.subscribe(&id).unwrap();
+        store.publish(&id, r#"{"jsonrpc":"2.0","method":"session/update"}"#.into());
+        let msg = rx.recv().await.unwrap();
+        assert!(msg.contains("session/update"));
+    }
+
+    #[test]
+    fn subscribe_unknown_session_returns_none() {
+        let store = AcpSessionStore::new();
+        let unknown = SessionId::new("nope");
+        assert!(store.subscribe(&unknown).is_none());
     }
 }
