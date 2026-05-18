@@ -82,34 +82,83 @@ For a local override that is never committed, copy to `gateway.local.toml` — i
 
 ## Zed IDE Integration
 
-### OpenAI-compatible provider (current)
+### Step 1 — Start the gateway
 
-Point Zed's OpenAI-compatible provider at the gateway:
+```bash
+cd nixacp-gateway
+cargo run
+# or with readable logs
+GATEWAY_LOG_FORMAT=text cargo run
+```
+
+The gateway listens on `http://127.0.0.1:8080` by default.
+
+---
+
+### Step 2 — OpenAI-compatible provider (recommended, works today)
+
+This uses Zed's built-in OpenAI-compatible provider — no plugin needed.
+
+Edit `~/.config/zed/settings.json`:
 
 ```json
-// ~/.config/zed/settings.json
 {
   "language_models": {
     "openai": {
       "api_url": "http://127.0.0.1:8080",
+      "api_key": "not-needed",
       "available_models": [
-        { "name": "qwen2.5-coder:14b", "max_tokens": 16384 }
+        {
+          "name": "qwen2.5-coder:14b",
+          "display_name": "Qwen2.5 Coder 14B (local)",
+          "max_tokens": 16384
+        }
       ]
     }
+  },
+  "assistant": {
+    "default_model": {
+      "provider": "openai",
+      "model": "qwen2.5-coder:14b"
+    },
+    "version": "2"
   }
 }
 ```
 
-### ACP agent panel (Phase 5)
+Open the **Assistant panel** in Zed (`Cmd+?` or `View → Assistant`) and start chatting. All requests go through the gateway to your local Ollama — no data leaves your machine.
+
+---
+
+### Step 3 — ACP agent panel (Phase 5, Zed nightly/preview)
+
+> ACP remote-agent UI is still being rolled out in Zed. The gateway is ready on its side.
 
 The gateway exposes two ACP endpoints:
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `POST /acp` | JSON-RPC 2.0 | `initialize`, `session/new`, `session/prompt`, `session/close` |
-| `GET /acp/events?session_id=<id>` | SSE | Streaming `session/update` notifications (one per token delta) |
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /acp` | JSON-RPC 2.0 — `initialize`, `session/new`, `session/prompt`, `session/close` |
+| `GET /acp/events?session_id=<id>` | SSE stream — one `session/update` notification per token delta |
 
-**Usage flow:**
+If your Zed build supports ACP remote agents, add to `~/.config/zed/settings.json`:
+
+```json
+{
+  "agent": {
+    "remote_servers": [
+      {
+        "name": "NixACP Gateway",
+        "url": "http://127.0.0.1:8080/acp"
+      }
+    ]
+  }
+}
+```
+
+Zed will then: initialize → create a session with your project's `cwd` → open the SSE stream → send prompts via `session/prompt`. Token output streams back through the SSE connection.
+
+**Verify the ACP endpoints manually:**
 
 ```bash
 # 1. Initialize
@@ -123,19 +172,34 @@ SESSION_ID=$(curl -s http://127.0.0.1:8080/acp \
   -d '{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['sessionId'])")
 
-# 3. Open SSE stream (in a separate terminal) to receive streaming output
+# 3. Open SSE stream in a second terminal (before sending the prompt)
 curl -N "http://127.0.0.1:8080/acp/events?session_id=${SESSION_ID}"
 
-# 4. Send a prompt — content streams via SSE, stopReason returned in HTTP response
+# 4. Send a prompt — tokens appear in the SSE terminal, stopReason in this response
 curl -s http://127.0.0.1:8080/acp \
   -H "Content-Type: application/json" \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"${SESSION_ID}\",\"prompt\":[{\"type\":\"text\",\"text\":\"Hello, what are you?\"}]}}"
+  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\
+\"params\":{\"sessionId\":\"${SESSION_ID}\",\
+\"prompt\":[{\"type\":\"text\",\"text\":\"Hello, what are you?\"}]}}"
 ```
 
-Each SSE event on `/acp/events` is a JSON-RPC 2.0 notification:
+Each SSE event is a JSON-RPC 2.0 notification:
+
 ```
 data: {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"...","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello"}}}}
 ```
+
+---
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Zed shows "model not found" | The `name` in `available_models` must exactly match `default_model` in `gateway.toml` |
+| Slow first response | Normal — Ollama loads the model weights on first use (~5–10 s for a 14B model) |
+| Request times out in Zed | Run `GATEWAY_LOG_LEVEL=debug cargo run` to trace where it stalls |
+| Gateway not reachable | Use `"127.0.0.1"` not `"localhost"` — some Zed versions do not resolve the hostname |
+| ACP agent panel missing | Your Zed build may not yet ship ACP remote-agent UI — use the OpenAI path (Step 2) |
 
 ## Development
 
