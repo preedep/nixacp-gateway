@@ -2,7 +2,7 @@
 
 > **North star:** A local-first, Zed-native intelligent gateway that makes Qwen/DeepSeek/Ollama feel as capable as GPT-4 for coding — with reflection, tool use, and ACP streaming — running entirely on the developer's machine.
 
-**Timeline:** 6 months | **Architecture reference:** `CLAUDE.md` | **Performance reference:** `docs/architecture/performance.md`
+**Timeline:** 7 months | **Architecture reference:** `CLAUDE.md` | **Performance reference:** `docs/architecture/performance.md` | **Tool strategy:** `docs/architecture/adr-003-tool-strategy-native-plus-mcp.md`
 
 ---
 
@@ -15,7 +15,8 @@
 | 3 | 4 + Perf 2–3 | Intelligence | Reflection/retry + cancellation hardening |
 | 4 | 5 | ACP | Full Zed IDE integration via ACP protocol |
 | 5 | 6 + Perf 4–5 | Production | Observability, admission control, 1-alloc hot path |
-| 6 | 7 + Perf 6–7 | Scale | MCP, multi-backend, HTTP/2, horizontal scaling |
+| 6 | 7a + 7b | Tools Expansion | Native built-ins (write, edit, bash) + MCP client |
+| 7 | 7c + Perf 6–7 | Scale | Multi-backend routing, HTTP/2, horizontal scaling |
 
 ---
 
@@ -202,14 +203,110 @@ src/main.rs  |  gateway.toml
 
 ---
 
-## Phase 7 — MCP, Multi-Backend, Horizontal Scale
+## Phase 7a — Native Tools Expansion
 
-**Duration:** Weeks 14–26 | **Perf:** Perf 6 (HTTP/2 + pool tuning), Perf 7 (Redis session store)
+**Duration:** Weeks 14–15 | **Perf:** none (correctness only)  
+**Decision:** [ADR-003](architecture/adr-003-tool-strategy-native-plus-mcp.md)
 
-**Entry criteria:** Phase 6 exit criteria met; SLOs verified under load.
+**Entry criteria:** Phase 6 exit criteria met.
 
 **Deliverables:**
-- `infrastructure/tools`: `McpToolRuntime` — connect to MCP servers, expose tools via `ToolRuntime` port
+
+*New native tools:*
+- `infrastructure/tools/find.rs` — `FindTool`: recursive directory listing with workspace confinement; supports glob pattern and max-depth
+- `infrastructure/tools/file_write.rs` — `FileWriteTool`: create or overwrite a file inside workspace root; rejects paths outside workspace via `canonicalize`
+- `infrastructure/tools/file_edit.rs` — `FileEditTool`: apply a unified diff patch to an existing file; uses `similar` crate for patch application
+- `infrastructure/tools/bash.rs` — `BashTool`: allowlist-only shell execution; denies `;`, `|`, `&&`, `||`, `>`, `<`, `` ` ``, `$(...)`; 30-second timeout; working directory locked to workspace root
+
+*Two-registry plumbing:*
+- `application/tool_loop`: `ToolLoopOrchestrator` gains `McpToolRegistry` field (empty for now); resolution order: native first, MCP second
+- `domain/ports`: `ToolRegistry` trait extracted so both registries share the same lookup interface
+
+*Config:*
+- `gateway.toml`: `[tools.bash]` block — `enabled = true/false`, `allowlist = [...]`
+- `api/state.rs`: parse `ToolsConfig`, wire `BashTool` only when `enabled = true`
+
+*Tests:*
+- Unit tests for each new tool: path traversal rejection, allowlist enforcement, diff apply
+- Integration test `tests/native_tools.rs`: write → read → bash loop via Axum router + wiremock
+
+**Key files:**
+```
+crates/infrastructure/src/tools/{find,file_write,file_edit,bash}.rs
+crates/application/src/tool_loop/mod.rs
+crates/domain/src/ports/tool_registry.rs
+gateway.toml
+crates/api/tests/native_tools.rs
+```
+
+**Exit criteria:**
+- `FindTool` returns `ToolError::Unauthorized` on paths outside workspace
+- `FileWriteTool` creates and overwrites files; rejects `../` traversal
+- `FileEditTool` applies a valid unified diff; returns error on malformed patch
+- `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`
+- `cargo test --workspace` passes (0 warnings)
+
+---
+
+## Phase 7b — MCP Client Integration
+
+**Duration:** Weeks 16–17 | **Perf:** none (correctness only)  
+**Decision:** [ADR-003](architecture/adr-003-tool-strategy-native-plus-mcp.md)
+
+**Entry criteria:** Phase 7a exit criteria met.
+
+**Deliverables:**
+
+*MCP client infrastructure:*
+- `infrastructure/tools/mcp/client.rs` — `McpStdioClient`: spawn MCP server process, keep alive for gateway lifetime, restart once on failure; uses `rmcp` from the ACP SDK (already a transitive dep via `agent-client-protocol`)
+- `infrastructure/tools/mcp/registry.rs` — `McpToolRegistry`: implements `ToolRegistry` port; lists tools from all connected MCP servers; dispatches calls by tool name prefix (`<server-name>/<tool>`)
+- `infrastructure/tools/mcp/config.rs` — parse `[[tools.mcp]]` entries from `gateway.toml`
+
+*Wiring:*
+- `application/tool_loop`: `McpToolRegistry` populated from config and passed to orchestrator
+- `api/state.rs`: spawn MCP child processes at startup; register `McpToolRegistry` shutdown in `CancellationToken` tree
+
+*Config (`gateway.toml`):*
+```toml
+[[tools.mcp]]
+name    = "git"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-git", "/workspace"]
+
+[[tools.mcp]]
+name    = "fetch"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-fetch"]
+```
+
+*Tests:*
+- Unit: `McpToolRegistry` resolves tool names, handles server crash + restart
+- Integration `tests/mcp_tools.rs`: mock MCP server (stdio), gateway calls it, result injected into conversation
+
+**Key files:**
+```
+crates/infrastructure/src/tools/mcp/{client,registry,config}.rs
+crates/api/src/state.rs
+gateway.toml
+crates/api/tests/mcp_tools.rs
+```
+
+**Exit criteria:**
+- Gateway starts with `[[tools.mcp]]` entries and spawns MCP child processes
+- Tool call routed to MCP server; result injected into conversation and resubmitted to model
+- MCP server crash triggers one restart; second crash returns `ToolError::ExecutionFailed`
+- `cargo test -p api --test mcp_tools` passes
+- `cargo test --workspace` passes (0 warnings)
+
+---
+
+## Phase 7c — Multi-Backend, HTTP/2, Horizontal Scale
+
+**Duration:** Weeks 18–26 | **Perf:** Perf 6 (HTTP/2 + pool tuning), Perf 7 (Redis session store)
+
+**Entry criteria:** Phase 7b exit criteria met.
+
+**Deliverables:**
 - `application/routing`: `RoundRobinStrategy`, `LeastLoadStrategy`, capability-based routing
 - `infrastructure/openai_proxy`: `OpenAiProxyClient` (cloud fallback)
 - Admin API: `GET/POST/DELETE /admin/backends`
@@ -223,7 +320,6 @@ src/main.rs  |  gateway.toml
 - Gateway overhead P95 < 20ms
 - 100 concurrent SSE sessions < 256 MB RSS
 - `RedisSessionStore` passes all `acp_session` integration tests
-- MCP tool round-trip: gateway calls external MCP server, injects result into conversation
 - `oha -c 100 -z 60s` load test completes with < 1% 5xx
 
 ---
@@ -237,6 +333,9 @@ src/main.rs  |  gateway.toml
 | tiktoken-rs approximation causes over-compression | Medium | Low | Use `cl100k_base` conservatively; document in `TiktokenCounter` that it over-estimates for Qwen/DeepSeek |
 | Zed ACP client behaviour diverges from spec | High | High | Test against actual Zed binary in Phase 5 — not just mock unit tests |
 | `MessageArena` migration breaks reflection loop | Medium | High | Keep `Vec<Message>` fallback behind `config.experimental.message_arena = false` during Phase 6 transition |
+| `BashTool` allowlist bypass via argument injection | Medium | High | Strip shell metacharacters before exec; use `tokio::process::Command` with explicit arg array (never shell string); test with adversarial inputs |
+| MCP server version incompatibility (`rmcp` API drift) | Medium | Medium | Pin `rmcp` version; confine all MCP wiring to `infrastructure/tools/mcp/` — blast radius is one module |
+| MCP child process leak on gateway crash | Low | Medium | Register MCP process handles in `CancellationToken` tree; use `kill_on_drop(true)` on `Child` |
 
 ---
 
@@ -255,3 +354,7 @@ All items must be true before the project is considered complete:
 - [ ] OTEL traces visible in Jaeger; all Prometheus metrics on `/metrics`
 - [ ] Client disconnect cleans up within 2s (Ollama connection closed)
 - [ ] No credentials in logs; `FileReadTool` path traversal rejected
+- [ ] Native tools: `FindTool`, `FileWriteTool`, `FileEditTool`, `BashTool` — all workspace-confined and tested
+- [ ] `BashTool` rejects shell metacharacter injection attempts
+- [ ] MCP tool round-trip: gateway calls external MCP server, result injected into conversation
+- [ ] MCP child process cleaned up within 2s of gateway shutdown
