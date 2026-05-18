@@ -47,13 +47,18 @@ pub async fn chat_completions(
     // bypasses ChatService entirely, so we must apply it here explicitly.
     let messages = state.chat.apply_pipeline(&req.model, messages);
 
+    // Ensure tool-loop responses have enough token budget to reproduce file
+    // contents. Ollama defaults to 128 tokens if not set; file_read results
+    // can be thousands of lines.
+    let max_tokens = Some(req.max_tokens.unwrap_or(4096).max(4096));
+
     let domain_req = ConversationRequest {
         id: Uuid::new_v4(),
         model: ModelId::new(&req.model),
         messages,
         stream: req.stream.unwrap_or(true),
         temperature: req.temperature,
-        max_tokens: req.max_tokens,
+        max_tokens,
         tool_definitions,
     };
 

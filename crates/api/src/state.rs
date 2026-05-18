@@ -122,7 +122,8 @@ impl AppState {
             (3) NEVER output {{\"function_name\":...}} — that format is WRONG. Use {{\"name\":...}} only.\n\
             (4) NEVER output prose, shell commands, or explanations before a tool call. Just the JSON.\n\
             (5) Paths MUST be relative to the workspace root (e.g. \"README.md\", \"src/main.rs\").\n\
-            (6) When the user says 'read FILE', immediately output the file_read JSON for that file.",
+            (6) When the user says 'read FILE', immediately output the file_read JSON for that file.\n\
+            (7) After a tool returns results, reproduce the COMPLETE content in your response. Do NOT summarise or truncate.",
             workspace_root = workspace_root.display()
         );
         let pipeline = PromptPipeline::new(
