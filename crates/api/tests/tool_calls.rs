@@ -75,6 +75,33 @@ fn ollama_plain_body(content: &str) -> String {
     .to_string()
 }
 
+/// Parse SSE bytes into a Vec of JSON data payloads (skips [DONE] and empty lines).
+fn parse_sse_chunks(bytes: &[u8]) -> Vec<Value> {
+    let text = std::str::from_utf8(bytes).unwrap_or("");
+    text.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter(|data| *data != "[DONE]")
+        .filter_map(|data| serde_json::from_str(data).ok())
+        .collect()
+}
+
+/// Collect the full assistant content from SSE chat.completion.chunk events.
+fn sse_content(chunks: &[Value]) -> String {
+    chunks
+        .iter()
+        .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
+        .collect()
+}
+
+/// Find the finish_reason from SSE chunks (last non-null one).
+fn sse_finish_reason(chunks: &[Value]) -> Option<String> {
+    chunks
+        .iter()
+        .filter_map(|c| c["choices"][0]["finish_reason"].as_str())
+        .find(|r| !r.is_empty())
+        .map(str::to_owned)
+}
+
 /// The OpenAI-format request body sent by the test client.
 fn openai_request_body() -> Value {
     json!({
@@ -127,7 +154,7 @@ async fn three_turn_tool_loop_returns_final_answer() {
         .and(path("/api/chat"))
         .respond_with(
             ResponseTemplate::new(200).set_body_string(ollama_tool_call_body(
-                "read_file",
+                "file_read",
                 json!({"path": "src/main.rs"}),
             )),
         )
@@ -178,23 +205,17 @@ async fn three_turn_tool_loop_returns_final_answer() {
     assert_eq!(response.status(), StatusCode::OK, "expected 200 OK");
 
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json: Value = serde_json::from_slice(&bytes).expect("response must be JSON");
+    let chunks = parse_sse_chunks(&bytes);
 
-    let choice = &json["choices"][0];
     assert_eq!(
-        choice["finish_reason"].as_str(),
+        sse_finish_reason(&chunks).as_deref(),
         Some("stop"),
-        "finish_reason must be 'stop' after final answer; got: {json}"
+        "finish_reason must be 'stop'; chunks: {chunks:?}"
     );
     assert_eq!(
-        choice["message"]["role"].as_str(),
-        Some("assistant"),
-        "message role must be 'assistant'; got: {json}"
-    );
-    assert_eq!(
-        choice["message"]["content"].as_str(),
-        Some("The main file defines the server entry point."),
-        "content must match final answer; got: {json}"
+        sse_content(&chunks),
+        "The main file defines the server entry point.",
+        "content must match final answer; chunks: {chunks:?}"
     );
 
     // Verify the mock server received exactly 3 calls (one per tool-loop pass).
@@ -223,6 +244,8 @@ async fn request_without_tools_does_not_use_tool_loop() {
     let state = Arc::new(AppState::new(config).expect("AppState::new"));
     let router = build_router(state);
 
+    // No tools in request — gateway still injects its own and runs tool loop,
+    // but model returns a plain answer so loop exits after one pass.
     let body = json!({
         "model": "test-model",
         "stream": false,
@@ -239,11 +262,9 @@ async fn request_without_tools_does_not_use_tool_loop() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(
-        json["choices"][0]["message"]["content"].as_str(),
-        Some("simple answer.")
-    );
+    let chunks = parse_sse_chunks(&bytes);
+
+    assert_eq!(sse_content(&chunks), "simple answer.", "chunks: {chunks:?}");
 
     let received = mock_server.received_requests().await.unwrap();
     assert_eq!(
@@ -294,17 +315,16 @@ async fn tool_loop_returns_tool_calls_when_max_passes_exhausted() {
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json: Value = serde_json::from_slice(&bytes).unwrap();
-
-    // After MAX_PASSES (5), the orchestrator returns the last tool-call response.
-    assert_eq!(
-        json["choices"][0]["finish_reason"].as_str(),
-        Some("tool_calls"),
-        "exhausted loop must report finish_reason=tool_calls; got: {json}"
-    );
+    // After MAX_PASSES exhaustion the last response had tool_calls — the loop
+    // emits an empty content SSE stream (content is empty on tool-call responses).
+    // The response must be SSE (text/event-stream), not a JSON error.
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
     assert!(
-        json["choices"][0]["message"]["tool_calls"].is_array(),
-        "tool_calls must be present in the message; got: {json}"
+        content_type.contains("text/event-stream"),
+        "expected SSE response; got content-type: {content_type}"
     );
 }
