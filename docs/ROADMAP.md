@@ -227,6 +227,10 @@ src/main.rs  |  gateway.toml
 - `application/prompt/system_prompt.rs` ✅: tool-use rules appended to existing Zed system message (was silently skipped when Zed sent its own system message, leaving model with no tool instructions)
 - `api/openai/chat.rs` ✅: `apply_pipeline()` called before tool loop so system prompt injection reaches the model (tool loop bypasses `ChatService.prepare()`)
 - `src/main.rs` — `GATEWAY_WORKSPACE_ROOT` env var ✅: figment config now correctly maps `GATEWAY_WORKSPACE_ROOT` → `workspace_root` (was broken by `split("_")` mapping it to nested key `workspace.root`); startup log confirms active workspace root
+- `infrastructure/tools/normalizer.rs` — Priority 5 format ✅: added `{"function_name":...,"function_arg":{...}}` detection; some Qwen2.5-coder variants emit this non-standard format instead of `{"name":...,"arguments":...}`
+- `api/openai/chat.rs` — `max_tokens` floor ✅: tool-loop requests always use at least 4096 tokens (Ollama default was 128, enough for ~2 lines only)
+- `application/tool_loop/mod.rs` — file_read fallback ✅: when model's final response is shorter than the file content it read, raw file content is appended automatically; model summarisation no longer loses file data
+- `api/state.rs` — system prompt ✅: explicit correct tool-call JSON format shown; wrong `function_name` format forbidden by name; rule to reproduce complete tool output added
 
 *Two-registry plumbing:*
 - `application/tool_loop`: `ToolLoopOrchestrator` gains `McpToolRegistry` field (empty for now); resolution order: native first, MCP second
@@ -257,6 +261,7 @@ crates/api/tests/native_tools.rs
 - `GATEWAY_WORKSPACE_ROOT` env var correctly overrides `workspace_root` at runtime ✅
 - Tool definitions injected with system prompt visible to model (Zed system message preserved + appended) ✅
 - Zed agent chat: `list_dir` tool executes and returns directory listing end-to-end ✅
+- Zed agent chat: `file_read` returns complete file contents end-to-end ✅
 - `FileWriteTool` creates and overwrites files; rejects `../` traversal
 - `FileEditTool` applies a valid unified diff; returns error on malformed patch
 - `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`

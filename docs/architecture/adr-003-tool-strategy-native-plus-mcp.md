@@ -189,3 +189,21 @@ must be applied at the call site.
 working directory as the workspace root. Fixed by splitting only the known nested keys
 (`log_level`, `log_format`, `server_host`, `server_port`) and mapping `GATEWAY_WORKSPACE_ROOT`
 separately via `Env::map`.
+
+**Normalizer Priority 5 — `function_name`/`function_arg` format** — Some Qwen2.5-coder variants
+emit `{"function_name":"tool","function_arg":{...}}` instead of the standard
+`{"name":"tool","arguments":{...}}`. Added as Priority 5 in `ToolCallNormalizer` so the tool
+executes rather than returning the raw JSON as the model's response text. The system prompt
+also now explicitly forbids this format by name.
+
+**`max_tokens` floor on tool-loop requests** — `chat_completions()` sets `max_tokens` to
+`max(requested, 4096)` before passing the request to `ToolLoopOrchestrator`. Ollama's default
+`num_predict` is 128 when `max_tokens` is absent, which is enough for approximately 2 lines of
+output — too short for any real file content.
+
+**`file_read` fallback content append** — `ToolLoopOrchestrator` now tracks the last successful
+`file_read` result. If the model's final response is shorter than the file content it received,
+the raw file content is appended after the model's intro sentence. This is a reliable fallback
+for the common case where a 14B model summarises file contents instead of reproducing them.
+The fallback is `file_read`-specific and only fires on successful reads; it does not affect
+`list_dir`, `search`, or `find` responses.
