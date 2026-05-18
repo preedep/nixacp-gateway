@@ -10,6 +10,7 @@ use infrastructure::acp::AcpSessionStore;
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
 use infrastructure::token_counter::TiktokenCounter;
 use infrastructure::tools::file_read::FileReadTool;
+use infrastructure::tools::find::{FindTool, ListTool};
 use infrastructure::tools::search::SearchTool;
 use logging::layer::LogFormat;
 use serde::Deserialize;
@@ -110,7 +111,9 @@ impl AppState {
         let workspace_root = std::env::current_dir().unwrap_or_default();
         let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
             Arc::new(FileReadTool::new(workspace_root.clone())),
-            Arc::new(SearchTool::new(workspace_root, "rg")),
+            Arc::new(SearchTool::new(workspace_root.clone(), "rg")),
+            Arc::new(FindTool::new(workspace_root.clone())),
+            Arc::new(ListTool::new(workspace_root)),
         ];
         let tool_loop = ToolLoopOrchestrator::new(ollama.clone(), built_in_tools);
         let reflection = ReflectionOrchestrator::new(ollama);
