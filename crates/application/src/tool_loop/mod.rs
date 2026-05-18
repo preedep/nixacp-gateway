@@ -32,6 +32,13 @@ impl ToolLoopOrchestrator {
         self.tools.iter().map(|t| t.name())
     }
 
+    /// Returns the ToolDefinition for every registered tool.
+    /// Used to inject gateway-owned tools into every request so the model
+    /// always knows what tools are available, regardless of what Zed sent.
+    pub fn tool_definitions(&self) -> Vec<domain::entities::tool::ToolDefinition> {
+        self.tools.iter().map(|t| t.definition()).collect()
+    }
+
     pub async fn run(
         &self,
         mut request: ConversationRequest,

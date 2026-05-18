@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use serde_json::json;
 use std::path::PathBuf;
 
-use domain::entities::tool::{ToolCall, ToolError, ToolResult};
+use domain::entities::tool::{ToolCall, ToolDefinition, ToolError, ToolResult};
 use domain::ports::tool_runtime::ToolRuntime;
 
 /// Searches for text matches using the `ripgrep` binary (`rg`).
@@ -26,6 +27,27 @@ impl SearchTool {
 impl ToolRuntime for SearchTool {
     fn name(&self) -> &str {
         "search"
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::function(
+            "search",
+            "Search for a text pattern across files in the workspace using ripgrep.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search pattern (literal string or regex)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional sub-directory to limit the search, e.g. \"src\""
+                    }
+                },
+                "required": ["query"]
+            }),
+        )
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {

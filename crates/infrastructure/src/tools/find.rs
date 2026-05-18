@@ -1,8 +1,9 @@
 use async_trait::async_trait;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use domain::entities::tool::{ToolCall, ToolError, ToolResult};
+use domain::entities::tool::{ToolCall, ToolDefinition, ToolError, ToolResult};
 use domain::ports::tool_runtime::ToolRuntime;
 
 // ── FindTool ─────────────────────────────────────────────────────────────────
@@ -27,6 +28,31 @@ impl FindTool {
 impl ToolRuntime for FindTool {
     fn name(&self) -> &str {
         "find"
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::function(
+            "find",
+            "Recursively find files or directories matching a glob pattern inside the workspace.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match filenames, e.g. \"*.rs\" or \"Cargo.toml\""
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional sub-directory to search within, e.g. \"src\""
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum recursion depth (default 10)"
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        )
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {
@@ -98,6 +124,23 @@ impl ListTool {
 impl ToolRuntime for ListTool {
     fn name(&self) -> &str {
         "list_dir"
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::function(
+            "list_dir",
+            "List the immediate contents of a directory in the workspace. Shows files and sub-directories.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the directory, e.g. \"src\" or \".\" for root"
+                    }
+                },
+                "required": []
+            }),
+        )
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {

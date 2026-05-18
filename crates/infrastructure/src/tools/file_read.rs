@@ -1,8 +1,9 @@
 use async_trait::async_trait;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use domain::entities::tool::{ToolCall, ToolError, ToolResult};
+use domain::entities::tool::{ToolCall, ToolDefinition, ToolError, ToolResult};
 use domain::ports::tool_runtime::ToolRuntime;
 
 /// Reads files from within a confined workspace root.
@@ -26,6 +27,23 @@ impl FileReadTool {
 impl ToolRuntime for FileReadTool {
     fn name(&self) -> &str {
         "file_read"
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::function(
+            "file_read",
+            "Read the contents of a file inside the workspace. Use relative paths.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the file from the workspace root, e.g. \"src/main.rs\""
+                    }
+                },
+                "required": ["path"]
+            }),
+        )
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolError> {

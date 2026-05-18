@@ -1,6 +1,7 @@
 use async_trait::async_trait;
+use serde_json::json;
 
-use crate::entities::tool::{ToolCall, ToolError, ToolResult};
+use crate::entities::tool::{ToolCall, ToolDefinition, ToolError, ToolResult};
 
 /// Executes a normalized tool call and returns its result.
 ///
@@ -10,6 +11,12 @@ use crate::entities::tool::{ToolCall, ToolError, ToolResult};
 pub trait ToolRuntime: Send + Sync {
     /// The tool name this runtime handles (e.g. `"file_read"`, `"search"`).
     fn name(&self) -> &str;
+
+    /// The OpenAI-compatible tool definition advertised to the model.
+    /// Default impl builds a no-parameter definition; override to add a JSON Schema.
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::function(self.name(), "", json!({"type": "object", "properties": {}}))
+    }
 
     /// Execute the call. Must not block the async executor — use
     /// `tokio::task::spawn_blocking` for any I/O or CPU-intensive work.

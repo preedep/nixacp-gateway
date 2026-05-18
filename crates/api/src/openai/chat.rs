@@ -21,7 +21,7 @@ use crate::state::AppState;
 use application::reflection::ReflectionError;
 
 use super::types::{
-    ApiFunctionCall, ApiToolCall, ApiToolDefinition, ChatCompletionChunk, ChatCompletionRequest,
+    ApiFunctionCall, ApiToolCall, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice, MessageContent,
     Usage,
 };
@@ -32,26 +32,16 @@ pub async fn chat_completions(
 ) -> Result<Response, AppError> {
     let messages = build_messages(&req)?;
 
-    // Only engage the tool loop for tools we actually have registered.
-    // Zed sends its own editor tools (edit_file, create_file, etc.) which we
-    // cannot execute — passing them through would cause tool-loop failures.
-    let registered_names: Vec<&str> = state.tool_loop.tool_names().collect();
-    if !req.tools.is_empty() {
-        let incoming: Vec<&str> = req.tools.iter().map(|t| t.function.name.as_str()).collect();
-        tracing::debug!(
-            incoming_tools = ?incoming,
-            registered_tools = ?registered_names,
-            "chat_completions: filtering tools"
-        );
-    }
-    let our_tools: Vec<_> = req
-        .tools
-        .iter()
-        .filter(|t| registered_names.contains(&t.function.name.as_str()))
-        .cloned()
-        .collect();
-    let has_our_tools = !our_tools.is_empty();
-    let tool_definitions = build_tool_definitions(&our_tools);
+    // Always advertise gateway-owned tools to the model so it can use them
+    // regardless of what Zed sent. Zed sends its own editor tools (edit_file,
+    // create_file, etc.) which we cannot execute — those are silently dropped.
+    let gateway_definitions = state.tool_loop.tool_definitions();
+    tracing::debug!(
+        tools = ?gateway_definitions.iter().map(|d| &d.function.name).collect::<Vec<_>>(),
+        "chat_completions: injecting gateway tools"
+    );
+    let tool_definitions: Vec<ToolDefinition> = gateway_definitions;
+    let has_our_tools = true;
 
     let domain_req = ConversationRequest {
         id: Uuid::new_v4(),
@@ -318,19 +308,6 @@ async fn complete_response(
     .into_response())
 }
 
-fn build_tool_definitions(tools: &[ApiToolDefinition]) -> Vec<ToolDefinition> {
-    tools
-        .iter()
-        .map(|t| {
-            ToolDefinition::function(
-                &t.function.name,
-                &t.function.description,
-                t.function.parameters.clone(),
-            )
-        })
-        .collect()
-}
-
 fn build_messages(req: &ChatCompletionRequest) -> Result<Vec<Message>, AppError> {
     if req.messages.is_empty() {
         return Err(AppError::BadRequest(
@@ -463,32 +440,6 @@ mod tests {
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0].id, "call_1");
         assert_eq!(tool_calls[0].function.name, "read_file");
-    }
-
-    // --- build_tool_definitions ---
-
-    #[test]
-    fn build_tool_definitions_empty_vec() {
-        let defs = build_tool_definitions(&[]);
-        assert!(defs.is_empty());
-    }
-
-    #[test]
-    fn build_tool_definitions_maps_fields() {
-        let api_tool = ApiToolDefinition {
-            kind: "function".into(),
-            function: ApiFunctionDefinition {
-                name: "read_file".into(),
-                description: "Read a file".into(),
-                parameters: json!({"type":"object","properties":{"path":{"type":"string"}}}),
-            },
-        };
-        let defs = build_tool_definitions(&[api_tool]);
-        assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].kind, "function");
-        assert_eq!(defs[0].function.name, "read_file");
-        assert_eq!(defs[0].function.description, "Read a file");
-        assert_eq!(defs[0].function.parameters["type"], "object");
     }
 
     // --- Serde round-trips ---
