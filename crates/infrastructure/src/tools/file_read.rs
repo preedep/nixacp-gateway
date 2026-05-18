@@ -62,8 +62,7 @@ impl ToolRuntime for FileReadTool {
         // Security gate: the resolved path must be inside the workspace root.
         if !resolved.starts_with(&root) {
             return Err(ToolError::Unauthorized(format!(
-                "path '{}' is outside workspace root",
-                path_str
+                "path '{path_str}' is outside workspace root"
             )));
         }
 
