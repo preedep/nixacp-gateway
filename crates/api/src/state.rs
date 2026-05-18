@@ -100,7 +100,18 @@ impl AppState {
         // once here so the first request pays no initialisation cost.
         let counter = Arc::new(TiktokenCounter::new());
 
-        let pipeline = PromptPipeline::new(SystemPromptBuilder::default(), ModelQuirksTransformer);
+        let pipeline = PromptPipeline::new(
+            SystemPromptBuilder::with_default(
+                "You are an expert coding assistant running inside Zed IDE. \
+                You have access to the following tools to interact with the user's workspace: \
+                file_read (read a file), file_write (write a file), search (grep across files), \
+                find (locate files by glob pattern), list_dir (list directory contents). \
+                When a user asks about files, directories, or code in their project, \
+                ALWAYS use the appropriate tool to get real data rather than guessing. \
+                Never make up file contents or directory listings.",
+            ),
+            ModelQuirksTransformer,
+        );
         let compression = CompressionService::new(
             counter.clone(),
             Arc::new(SlidingWindowCompressor::new(counter.clone())),

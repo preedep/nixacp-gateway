@@ -21,7 +21,7 @@ use crate::state::AppState;
 use domain::entities::conversation::ConversationRequest;
 use domain::entities::message::Message;
 use domain::entities::model::ModelId;
-use domain::entities::tool::{ToolCall, ToolDefinition};
+use domain::entities::tool::ToolCall;
 
 // ── OpenAI Responses API wire types ──────────────────────────────────────────
 
@@ -103,22 +103,6 @@ fn input_to_messages(input: ResponsesInput) -> Vec<Message> {
     }
 }
 
-fn input_to_tool_definitions(tools: Vec<Value>) -> Vec<ToolDefinition> {
-    tools
-        .into_iter()
-        .filter_map(|t| {
-            let name = t.get("name")?.as_str()?.to_owned();
-            let description = t
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_owned();
-            let parameters = t.get("parameters").cloned().unwrap_or(json!({}));
-            Some(ToolDefinition::function(&name, &description, parameters))
-        })
-        .collect()
-}
-
 fn extract_text(content: &Value) -> String {
     match content {
         Value::String(s) => s.clone(),
@@ -157,8 +141,10 @@ pub async fn responses_handler(State(state): State<Arc<AppState>>, body: Bytes) 
 
     let model = state.config.ollama.default_model.clone();
     let messages = input_to_messages(req.input);
-    let tool_definitions = input_to_tool_definitions(req.tools);
-    let has_tools = !tool_definitions.is_empty();
+    // Always inject gateway tools — ignore what the client sent (Zed sends its
+    // own editor tools we cannot execute).
+    let tool_definitions = state.tool_loop.tool_definitions();
+    let has_tools = true;
 
     if messages.is_empty() {
         return (
