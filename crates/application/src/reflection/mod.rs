@@ -52,6 +52,19 @@ fn quality_issue(response: &ConversationResponse) -> Option<&'static str> {
         return Some("truncated heading");
     }
 
+    // Prose cut off mid-sentence — no terminal punctuation or code boundary.
+    // Only applies outside code blocks (an even fence count means we're in prose).
+    let fence_opens = text.matches("```").count();
+    if fence_opens.is_multiple_of(2) {
+        let last_char = text.chars().last().unwrap_or(' ');
+        if !matches!(
+            last_char,
+            '.' | '!' | '?' | '`' | '}' | ')' | ';' | '"' | ':'
+        ) {
+            return Some("truncated sentence");
+        }
+    }
+
     None
 }
 
@@ -350,6 +363,30 @@ mod tests {
     #[test]
     fn quality_issue_complete_heading_is_fine() {
         assert!(quality_issue(&good_response("### Summary\nAll done.")).is_none());
+    }
+
+    #[test]
+    fn quality_issue_truncated_sentence() {
+        assert!(quality_issue(&good_response(
+            "This function sorts a vector of integers using Rust"
+        ))
+        .is_some());
+    }
+
+    #[test]
+    fn quality_issue_sentence_ends_with_punctuation() {
+        assert!(quality_issue(&good_response("This function sorts a vector.")).is_none());
+        assert!(quality_issue(&good_response("Use vec.sort();")).is_none());
+        assert!(quality_issue(&good_response("Here is the result:")).is_none());
+    }
+
+    #[test]
+    fn quality_issue_truncated_sentence_not_fired_inside_open_fence() {
+        // Open fence — truncated-sentence check must not fire; fence check handles it.
+        let r = good_response("```rust\nfn sort(v: &mut Vec<i32>)");
+        let issue = quality_issue(&r);
+        assert!(issue.is_some());
+        assert_eq!(issue, Some("truncated code block"));
     }
 
     #[tokio::test]

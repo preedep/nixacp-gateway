@@ -214,7 +214,7 @@ async fn request_without_tools_does_not_use_tool_loop() {
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_string(ollama_plain_body("simple answer")),
+            ResponseTemplate::new(200).set_body_string(ollama_plain_body("simple answer.")),
         )
         .mount(&mock_server)
         .await;
@@ -242,7 +242,7 @@ async fn request_without_tools_does_not_use_tool_loop() {
     let json: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
         json["choices"][0]["message"]["content"].as_str(),
-        Some("simple answer")
+        Some("simple answer.")
     );
 
     let received = mock_server.received_requests().await.unwrap();
