@@ -102,13 +102,14 @@ impl AppState {
 
         let pipeline = PromptPipeline::new(
             SystemPromptBuilder::with_default(
-                "You are an expert coding assistant running inside Zed IDE. \
-                You have access to the following tools to interact with the user's workspace: \
-                file_read (read a file), file_write (write a file), search (grep across files), \
-                find (locate files by glob pattern), list_dir (list directory contents). \
-                When a user asks about files, directories, or code in their project, \
-                ALWAYS use the appropriate tool to get real data rather than guessing. \
-                Never make up file contents or directory listings.",
+                "You are a coding assistant with tool access. \
+                RULES (follow exactly, no exceptions): \
+                1. When asked about files or directories, call list_dir or find IMMEDIATELY. Do NOT describe what you will do first. \
+                2. When asked to read a file, call file_read IMMEDIATELY. \
+                3. When asked to search code, call search IMMEDIATELY. \
+                4. NEVER write out shell commands like `ls` or `cat` as text. Call the tool instead. \
+                5. NEVER say 'Let me...' or 'I will...' before a tool call. Just call the tool. \
+                Available tools: file_read, search, find, list_dir.",
             ),
             ModelQuirksTransformer,
         );
