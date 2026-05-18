@@ -21,9 +21,8 @@ use crate::state::AppState;
 use application::reflection::ReflectionError;
 
 use super::types::{
-    ApiFunctionCall, ApiToolCall, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, ChatMessage, ChunkChoice, ChunkDelta, CompletionChoice, MessageContent,
-    Usage,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ChunkChoice,
+    ChunkDelta, CompletionChoice, MessageContent, Usage,
 };
 
 pub async fn chat_completions(
@@ -75,60 +74,66 @@ async fn tool_loop_response(
         application::tool_loop::ToolLoopError::Backend(be) => AppError::Backend(be),
     })?;
 
-    let id = format!("chatcmpl-{}", resp.id.simple());
-    let finish_reason = if resp.is_tool_call() {
-        "tool_calls"
-    } else {
-        "stop"
-    }
-    .to_owned();
-    let token_count = resp.content.split_whitespace().count() as u32;
+    let chunk_id = format!("chatcmpl-{}", resp.id.simple());
+    let content = resp.content.clone();
 
-    let message = if resp.is_tool_call() {
-        let api_calls = resp
-            .tool_calls
-            .unwrap_or_default()
-            .into_iter()
-            .map(|c| ApiToolCall {
-                id: c.id,
-                kind: c.kind,
-                function: ApiFunctionCall {
-                    name: c.function.name,
-                    arguments: c.function.arguments,
+    // Stream the tool-loop result back as SSE so Zed's chat UI renders it.
+    // The tool loop runs synchronously, so we fake a stream by emitting the
+    // full content as a single delta chunk followed by a [DONE] sentinel.
+    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
+
+    tokio::spawn(async move {
+        let make_chunk = |delta_content: Option<String>, finish: Option<&str>| {
+            let chunk = ChatCompletionChunk {
+                id: chunk_id.clone(),
+                object: "chat.completion.chunk",
+                model: model.clone(),
+                choices: vec![ChunkChoice {
+                    index: 0,
+                    delta: ChunkDelta {
+                        role: None,
+                        content: delta_content,
+                    },
+                    finish_reason: finish.map(str::to_owned),
+                }],
+            };
+            serde_json::to_string(&chunk).unwrap_or_default()
+        };
+
+        // role delta
+        let role_chunk = ChatCompletionChunk {
+            id: chunk_id.clone(),
+            object: "chat.completion.chunk",
+            model: model.clone(),
+            choices: vec![ChunkChoice {
+                index: 0,
+                delta: ChunkDelta {
+                    role: Some("assistant".to_owned()),
+                    content: None,
                 },
-            })
-            .collect();
-        ChatMessage {
-            role: "assistant".to_owned(),
-            content: MessageContent::Text(String::new()),
-            tool_call_id: None,
-            tool_calls: Some(api_calls),
+                finish_reason: None,
+            }],
+        };
+        if let Ok(json) = serde_json::to_string(&role_chunk) {
+            let _ = tx.send(Ok(Event::default().data(json))).await;
         }
-    } else {
-        ChatMessage {
-            role: "assistant".to_owned(),
-            content: MessageContent::Text(resp.content),
-            tool_call_id: None,
-            tool_calls: None,
-        }
-    };
 
-    Ok(Json(ChatCompletionResponse {
-        id,
-        object: "chat.completion",
-        model,
-        choices: vec![CompletionChoice {
-            index: 0,
-            message,
-            finish_reason,
-        }],
-        usage: Usage {
-            prompt_tokens: resp.prompt_tokens,
-            completion_tokens: token_count,
-            total_tokens: resp.prompt_tokens + token_count,
-        },
-    })
-    .into_response())
+        // content delta
+        if !content.is_empty() {
+            let data = make_chunk(Some(content), None);
+            let _ = tx.send(Ok(Event::default().data(data))).await;
+        }
+
+        // finish delta
+        let data = make_chunk(None, Some("stop"));
+        let _ = tx.send(Ok(Event::default().data(data))).await;
+
+        let _ = tx.send(Ok(Event::default().data("[DONE]"))).await;
+    });
+
+    Ok(Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response())
 }
 
 /// Drop guard that cancels the request token when the stream pump task exits,

@@ -193,20 +193,96 @@ async fn responses_tool_loop(
         }
     };
 
+    // Stream the tool-loop result as Responses API SSE so Zed's UI renders it.
     let response_id = format!("resp_{}", resp.id.simple());
-    // Return a completed (non-streaming) Responses API response
-    axum::Json(json!({
-        "id": response_id,
-        "object": "response",
-        "model": model,
-        "status": "completed",
-        "output": [{
-            "type": "message",
-            "role": "assistant",
-            "content": [{"type": "output_text", "text": resp.content}]
-        }]
-    }))
-    .into_response()
+    let item_id = format!("msg_{}", resp.id.simple());
+    let full_text = resp.content.clone();
+
+    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
+
+    tokio::spawn(async move {
+        let send = |event: Value| {
+            let tx = tx.clone();
+            async move {
+                let data = serde_json::to_string(&event).unwrap_or_default();
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(60),
+                    tx.send(Ok(Event::default().data(data))),
+                )
+                .await;
+            }
+        };
+
+        send(json!({
+            "type": "response.created",
+            "response": {"id": response_id, "object": "response", "model": model, "status": "in_progress"}
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {"id": item_id, "type": "message", "role": "assistant", "content": []}
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.content_part.added",
+            "output_index": 0,
+            "content_index": 0,
+            "part": {"type": "output_text", "text": ""}
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.output_text.delta",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": full_text
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.output_text.done",
+            "output_index": 0,
+            "content_index": 0,
+            "text": full_text
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": {
+                "id": item_id,
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": full_text}]
+            }
+        }))
+        .await;
+
+        send(json!({
+            "type": "response.completed",
+            "response": {
+                "id": response_id,
+                "object": "response",
+                "model": model,
+                "status": "completed",
+                "output": [{
+                    "id": item_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": full_text}]
+                }]
+            }
+        }))
+        .await;
+    });
+
+    Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response()
 }
 
 async fn responses_stream(
