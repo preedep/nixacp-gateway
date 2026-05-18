@@ -13,10 +13,12 @@ use domain::entities::tool::{ToolCall, ToolDefinition};
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::state::AppState;
+use application::reflection::ReflectionError;
 
 use super::types::{
     ApiFunctionCall, ApiToolCall, ApiToolDefinition, ChatCompletionChunk, ChatCompletionRequest,
@@ -41,12 +43,16 @@ pub async fn chat_completions(
         tool_definitions,
     };
 
+    // Child token inherits from the gateway root; cancelling gateway_cancel
+    // drains all in-flight requests at once (graceful shutdown).
+    let request_cancel = state.gateway_cancel.child_token();
+
     if has_tools {
         tool_loop_response(state, domain_req, req.model).await
     } else if req.stream.unwrap_or(true) {
-        stream_response(state, domain_req, req.model).await
+        stream_response(state, domain_req, req.model, request_cancel).await
     } else {
-        complete_response(state, domain_req, req.model).await
+        complete_response(state, domain_req, req.model, request_cancel).await
     }
 }
 
@@ -115,10 +121,22 @@ async fn tool_loop_response(
     .into_response())
 }
 
+/// Drop guard that cancels the request token when the stream pump task exits,
+/// ensuring the cancellation propagates regardless of how the task ends
+/// (normal completion, client disconnect, or panic unwind).
+struct StreamGuard(CancellationToken);
+
+impl Drop for StreamGuard {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 async fn stream_response(
     state: Arc<AppState>,
     domain_req: ConversationRequest,
     model: String,
+    cancel: CancellationToken,
 ) -> Result<Response, AppError> {
     let mut backend_stream = state.chat.stream(domain_req).await?;
     // Capacity 32: provides backpressure if the client stalls while keeping
@@ -128,6 +146,10 @@ async fn stream_response(
     let chunk_id = format!("chatcmpl-{}", Uuid::new_v4().simple());
 
     tokio::spawn(async move {
+        // StreamGuard fires cancel on drop — covers all exit paths including
+        // early returns and the normal end-of-stream path.
+        let _guard = StreamGuard(cancel.clone());
+
         // OpenAI spec requires an initial delta with role="assistant" and no
         // content before the first token delta.
         let initial = ChatCompletionChunk {
@@ -144,13 +166,41 @@ async fn stream_response(
             }],
         };
         if let Ok(json) = serde_json::to_string(&initial) {
-            if tx.send(Ok(Event::default().data(json))).await.is_err() {
+            // 60 s send timeout: a permanently-full channel means the client is dead.
+            let send_result = tokio::time::timeout(
+                Duration::from_secs(60),
+                tx.send(Ok(Event::default().data(json))),
+            )
+            .await;
+            if send_result.is_err() || send_result.unwrap().is_err() {
                 return;
             }
         }
 
-        // Pump stream chunks
-        while let Some(result) = backend_stream.next().await {
+        // Pump stream chunks. Per-chunk timeout of 30 s prevents a stalled Ollama
+        // from holding the stream open indefinitely without sending any bytes.
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => break,
+                result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    backend_stream.next(),
+                ) => result,
+            };
+
+            let chunk_opt = match next {
+                Ok(opt) => opt,
+                Err(_elapsed) => {
+                    let _ = tx
+                        .send(Ok(Event::default().data("[error] chunk timeout")))
+                        .await;
+                    break;
+                }
+            };
+
+            let Some(result) = chunk_opt else { break };
+
             let event = match result {
                 Ok(chunk) if chunk.is_terminal() => {
                     let finish = ChatCompletionChunk {
@@ -193,9 +243,9 @@ async fn stream_response(
                 Err(e) => Ok(Event::default().data(format!("[error] {e}"))),
             };
 
-            // tx.send error means the receiver (SSE body) was dropped — the
-            // client disconnected. Stop pumping to avoid driving Ollama for nothing.
-            if tx.send(event).await.is_err() {
+            // 60 s send timeout: a permanently-full channel means the client is dead.
+            let send_result = tokio::time::timeout(Duration::from_secs(60), tx.send(event)).await;
+            if send_result.is_err() || send_result.unwrap().is_err() {
                 return;
             }
         }
@@ -212,8 +262,16 @@ async fn complete_response(
     state: Arc<AppState>,
     domain_req: ConversationRequest,
     model: String,
+    cancel: CancellationToken,
 ) -> Result<Response, AppError> {
-    let resp = state.chat.complete(domain_req).await?;
+    let resp = state
+        .reflection
+        .run(domain_req, cancel)
+        .await
+        .map_err(|e| match e {
+            ReflectionError::Backend(be) => AppError::Backend(be),
+            ReflectionError::Cancelled => AppError::Internal(anyhow::anyhow!("request cancelled")),
+        })?;
     let id = format!("chatcmpl-{}", resp.id.simple());
     let token_count = resp.content.split_whitespace().count() as u32;
 

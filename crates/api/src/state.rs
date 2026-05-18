@@ -3,6 +3,7 @@ use std::sync::Arc;
 use application::chat::ChatService;
 use application::compression::{CompressionService, SlidingWindowCompressor};
 use application::prompt::{ModelQuirksTransformer, PromptPipeline, SystemPromptBuilder};
+use application::reflection::ReflectionOrchestrator;
 use application::tool_loop::ToolLoopOrchestrator;
 use domain::ports::tool_runtime::ToolRuntime;
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
@@ -11,6 +12,7 @@ use infrastructure::tools::file_read::FileReadTool;
 use infrastructure::tools::search::SearchTool;
 use logging::layer::LogFormat;
 use serde::Deserialize;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Deserialize)]
 pub struct ServerConfig {
@@ -78,6 +80,9 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub chat: ChatService,
     pub tool_loop: ToolLoopOrchestrator,
+    pub reflection: ReflectionOrchestrator,
+    /// Root of the cancellation token tree. Cancel this to drain all in-flight requests.
+    pub gateway_cancel: CancellationToken,
     pub log_ctx: LogContext,
 }
 
@@ -105,7 +110,8 @@ impl AppState {
             Arc::new(FileReadTool::new(workspace_root.clone())),
             Arc::new(SearchTool::new(workspace_root, "rg")),
         ];
-        let tool_loop = ToolLoopOrchestrator::new(ollama, built_in_tools);
+        let tool_loop = ToolLoopOrchestrator::new(ollama.clone(), built_in_tools);
+        let reflection = ReflectionOrchestrator::new(ollama);
 
         let log_ctx = LogContext {
             app_id: config.log.app_id.clone(),
@@ -115,6 +121,8 @@ impl AppState {
             config: Arc::new(config),
             chat,
             tool_loop,
+            reflection,
+            gateway_cancel: CancellationToken::new(),
             log_ctx,
         })
     }

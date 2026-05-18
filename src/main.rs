@@ -61,7 +61,14 @@ async fn async_main(config: api::state::Config) -> anyhow::Result<()> {
         .with_app_id(state.log_ctx.app_id.as_deref().unwrap_or(""))
         .emit();
 
+    let gateway_cancel = state.gateway_cancel.clone();
     axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            // Cancel the root token on SIGINT/SIGTERM so all child tokens
+            // (request_cancel, orchestrator_cancel) are triggered in turn.
+            let _ = tokio::signal::ctrl_c().await;
+            gateway_cancel.cancel();
+        })
         .await
         .context("server error")?;
     Ok(())

@@ -43,6 +43,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tracing",
  "uuid",
@@ -59,6 +60,7 @@ dependencies = [
  "futures-util",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -1718,6 +1720,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

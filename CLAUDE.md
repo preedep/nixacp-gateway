@@ -39,7 +39,7 @@ nixacp-gateway/
 │   │       ├── compression/    # CompressionService, SlidingWindowCompressor
 │   │       ├── prompt/         # PromptPipeline, SystemPromptBuilder, ModelQuirksTransformer
 │   │       ├── routing/        # multi-model router (Phase 4+) — not yet built
-│   │       └── reflection/     # retry-on-failure loop (Phase 4) — not yet built
+│   │       └── reflection/     # ReflectionOrchestrator — quality check + retry, Semaphore(20)
 │   ├── infrastructure/         # implements domain ports
 │   │   └── src/
 │   │       ├── ollama/         # OllamaClient — LlmBackend impl, NDJSON stream
@@ -151,9 +151,9 @@ cargo check --workspace
 
 ### Test commands summary
 ```bash
-cargo test --workspace                        # all unit + integration tests (134 tests)
+cargo test --workspace                        # all unit + integration tests (144 tests)
 cargo test -p domain                          # domain unit tests only (39 tests)
-cargo test -p application                     # application unit tests only (20 tests)
+cargo test -p application                     # application unit tests only (30 tests)
 cargo test -p infrastructure                  # infrastructure unit tests (57 tests)
 cargo test -p api                             # api unit + integration tests (14 tests)
 cargo test -p api --test tool_calls           # tool-call integration tests only
@@ -263,7 +263,7 @@ Development is organized in 7 phases over 6 months. See `docs/ROADMAP.md` for th
 1. Minimal streaming proxy (Weeks 1–3) ✅ DONE
 2. Prompt pipeline + compression (Weeks 4–5) ✅ DONE
 3. Tool calls (Weeks 6–7) ✅ DONE
-4. Reflection/retry + cancellation hardening (Weeks 8–9)
+4. Reflection/retry + cancellation hardening (Weeks 8–9) ✅ DONE
 5. ACP protocol / Zed integration (Weeks 10–11)
 6. Observability + performance hot path (Weeks 12–13)
 7. MCP + multi-backend + horizontal scale (Weeks 14–26)

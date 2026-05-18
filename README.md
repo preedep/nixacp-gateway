@@ -9,7 +9,7 @@ An OpenAI-compatible streaming gateway for local coding LLMs (Ollama / Qwen / De
 | 1 | Minimal streaming proxy | ✅ Done |
 | 2 | Prompt pipeline + context compression | ✅ Done |
 | 3 | Tool calls | ✅ Done |
-| 4 | Reflection / retry + cancellation | In Progress |
+| 4 | Reflection / retry + cancellation | ✅ Complete |
 | 5 | ACP protocol / Zed agent integration | Planned |
 | 6 | Observability + performance hot path | Planned |
 | 7 | MCP + multi-backend + horizontal scale | Planned |
@@ -103,12 +103,12 @@ Point Zed's OpenAI-compatible provider at the gateway:
 # Build
 cargo build --workspace
 
-# Run all tests (134 tests across all crates)
+# Run all tests (144 tests across all crates)
 cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p domain          # 39 tests
-cargo test -p application     # 20 tests
+cargo test -p application     # 30 tests
 cargo test -p infrastructure  # 57 tests
 cargo test -p api             # 14 tests
 
