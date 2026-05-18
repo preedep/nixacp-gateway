@@ -6,6 +6,7 @@ use application::prompt::{ModelQuirksTransformer, PromptPipeline, SystemPromptBu
 use application::reflection::ReflectionOrchestrator;
 use application::tool_loop::ToolLoopOrchestrator;
 use domain::ports::tool_runtime::ToolRuntime;
+use infrastructure::acp::AcpSessionStore;
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
 use infrastructure::token_counter::TiktokenCounter;
 use infrastructure::tools::file_read::FileReadTool;
@@ -81,6 +82,7 @@ pub struct AppState {
     pub chat: ChatService,
     pub tool_loop: ToolLoopOrchestrator,
     pub reflection: ReflectionOrchestrator,
+    pub acp_sessions: AcpSessionStore,
     /// Root of the cancellation token tree. Cancel this to drain all in-flight requests.
     pub gateway_cancel: CancellationToken,
     pub log_ctx: LogContext,
@@ -122,6 +124,7 @@ impl AppState {
             chat,
             tool_loop,
             reflection,
+            acp_sessions: AcpSessionStore::new(),
             gateway_cancel: CancellationToken::new(),
             log_ctx,
         })

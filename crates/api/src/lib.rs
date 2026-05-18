@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod error;
 pub mod middleware;
 pub mod openai;

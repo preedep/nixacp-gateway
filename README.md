@@ -10,13 +10,14 @@ An OpenAI-compatible streaming gateway for local coding LLMs (Ollama / Qwen / De
 | 2 | Prompt pipeline + context compression | ✅ Done |
 | 3 | Tool calls | ✅ Done |
 | 4 | Reflection / retry + cancellation | ✅ Complete |
-| 5 | ACP protocol / Zed agent integration | Planned |
+| 5 | ACP protocol / Zed agent integration | ✅ Done |
 | 6 | Observability + performance hot path | Planned |
 | 7 | MCP + multi-backend + horizontal scale | Planned |
 
 ## Features
 
 - **OpenAI-compatible API** — `/v1/chat/completions` (streaming SSE + non-streaming) and `/v1/models`
+- **ACP endpoint** — `POST /acp` speaks JSON-RPC 2.0 per the Agent Client Protocol; handles `initialize`, `session/new`, `session/prompt`, and `session/close`; session history persisted in-memory with 30-min TTL
 - **Ollama backend** — proxies to any remote or local Ollama instance
 - **Prompt pipeline** — `SystemPromptBuilder`, `ModelQuirksTransformer`, and per-model prompt optimisation
 - **Context compression** — sliding-window compressor keeps conversations within the model's token limit; pluggable strategy via trait
@@ -81,6 +82,8 @@ For a local override that is never committed, copy to `gateway.local.toml` — i
 
 ## Zed IDE Integration
 
+### OpenAI-compatible provider (current)
+
 Point Zed's OpenAI-compatible provider at the gateway:
 
 ```json
@@ -97,26 +100,50 @@ Point Zed's OpenAI-compatible provider at the gateway:
 }
 ```
 
+### ACP agent panel (Phase 5)
+
+The gateway exposes an ACP endpoint at `POST http://127.0.0.1:8080/acp`.
+
+```bash
+# Initialize
+curl -s http://127.0.0.1:8080/acp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}'
+
+# Create a session
+curl -s http://127.0.0.1:8080/acp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/tmp","mcpServers":[]}}'
+
+# Send a prompt (use the sessionId from the response above)
+curl -s http://127.0.0.1:8080/acp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"<id>","prompt":[{"type":"text","text":"Hello"}]}}'
+```
+
 ## Development
 
 ```bash
 # Build
 cargo build --workspace
 
-# Run all tests (150 tests across all crates)
+# Run all tests (160 tests across all crates)
 cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p domain          # 39 tests
 cargo test -p application     # 36 tests
-cargo test -p infrastructure  # 57 tests
-cargo test -p api             # 14 tests
+cargo test -p infrastructure  # 62 tests
+cargo test -p api             # 19 tests
 
 # Run a single test by name
 cargo test -p application tool_loop::tests::single_tool_call_one_pass
 
 # Run the tool-call integration tests only
 cargo test -p api --test tool_calls
+
+# Run the ACP session integration tests only
+cargo test -p api --test acp_session
 
 # Lint (CI enforces -D warnings — fix all before pushing)
 cargo clippy --workspace --all-targets -- -D warnings

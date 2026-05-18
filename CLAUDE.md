@@ -135,7 +135,7 @@ cargo check --workspace
 - Live in `crates/<crate>/tests/` (Rust integration test convention).
 - Use `wiremock` to mock Ollama HTTP endpoints — never require a live Ollama process in CI.
 - Test full request/response cycles through the Axum router using `axum::http::Request` + `tower::ServiceExt::oneshot`.
-- One test file per feature area: `tests/tool_calls.rs` ✅, `tests/streaming.rs`, `tests/acp_session.rs`, `tests/reflection.rs`.
+- One test file per feature area: `tests/tool_calls.rs` ✅, `tests/acp_session.rs` ✅, `tests/streaming.rs`, `tests/reflection.rs`.
 - Run: `cargo test -p api --test tool_calls`
 
 ### Benchmark tests
@@ -151,11 +151,11 @@ cargo check --workspace
 
 ### Test commands summary
 ```bash
-cargo test --workspace                        # all unit + integration tests (150 tests)
+cargo test --workspace                        # all unit + integration tests (160 tests)
 cargo test -p domain                          # domain unit tests only (39 tests)
 cargo test -p application                     # application unit tests only (36 tests)
 cargo test -p infrastructure                  # infrastructure unit tests (57 tests)
-cargo test -p api                             # api unit + integration tests (14 tests)
+cargo test -p api                             # api unit + integration tests (19 tests)
 cargo test -p api --test tool_calls           # tool-call integration tests only
 cargo bench --workspace                       # all benchmarks
 cargo bench -p infrastructure --bench hot_path
@@ -264,7 +264,7 @@ Development is organized in 7 phases over 6 months. See `docs/ROADMAP.md` for th
 2. Prompt pipeline + compression (Weeks 4–5) ✅ DONE
 3. Tool calls (Weeks 6–7) ✅ DONE
 4. Reflection/retry + cancellation hardening (Weeks 8–9) ✅ DONE
-5. ACP protocol / Zed integration (Weeks 10–11)
+5. ACP protocol / Zed integration (Weeks 10–11) ✅ DONE
 6. Observability + performance hot path (Weeks 12–13)
 7. MCP + multi-backend + horizontal scale (Weeks 14–26)
 

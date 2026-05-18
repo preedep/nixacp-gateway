@@ -7,6 +7,8 @@ edition.workspace = true
 domain         = { path = "../domain" }
 application    = { path = "../application" }
 infrastructure = { path = "../infrastructure" }
+agent-client-protocol        = "0.12.1"
+agent-client-protocol-schema = "0.13.2"
 logging        = { path = "../logging" }
 axum           = { version = "0.8", features = ["macros"] }
 tokio          = { version = "1", features = ["full"] }
