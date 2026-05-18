@@ -47,6 +47,11 @@ fn quality_issue(response: &ConversationResponse) -> Option<&'static str> {
         return Some("truncated json tool call");
     }
 
+    // Response ran out of tokens mid-heading (e.g. ends with "###").
+    if text.ends_with("###") || text.ends_with("##") || text.ends_with('#') {
+        return Some("truncated heading");
+    }
+
     None
 }
 
@@ -333,5 +338,31 @@ mod tests {
     #[test]
     fn quality_issue_closed_fence_is_fine() {
         assert!(quality_issue(&good_response("```rust\nfn main() {}\n```")).is_none());
+    }
+
+    #[test]
+    fn quality_issue_truncated_heading() {
+        assert!(quality_issue(&good_response("Some intro\n\n###")).is_some());
+        assert!(quality_issue(&good_response("Some intro\n\n##")).is_some());
+        assert!(quality_issue(&good_response("Some intro\n\n#")).is_some());
+    }
+
+    #[test]
+    fn quality_issue_complete_heading_is_fine() {
+        assert!(quality_issue(&good_response("### Summary\nAll done.")).is_none());
+    }
+
+    #[tokio::test]
+    async fn truncated_heading_triggers_retry() {
+        let backend = Arc::new(FakeBackend::new(vec![
+            good_response("### Summary\nThis function sorts a vector\n\n###"),
+            good_response("```rust\nfn sort(v: &mut Vec<i32>) { v.sort(); }\n```"),
+        ]));
+        let orch = ReflectionOrchestrator::new(backend);
+        let resp = orch
+            .run(base_request(), CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(resp.content.contains("fn sort"));
     }
 }
