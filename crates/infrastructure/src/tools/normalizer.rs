@@ -72,6 +72,14 @@ impl ToolCallNormalizer {
             }
         }
 
+        // Priority 5: non-standard {"function_name":...,"function_arg":{...}} format.
+        // Some Qwen variants emit this instead of {"name":...,"arguments":...}.
+        if looks_like_function_name_format(&msg.content) {
+            if let Ok(call) = parse_function_name_format(msg.content.trim()) {
+                return Ok(Some(vec![call]));
+            }
+        }
+
         Ok(None)
     }
 }
@@ -136,6 +144,41 @@ fn looks_like_bare_json_tool_call(content: &str) -> bool {
     let t = content.trim();
     // Must start/end with braces and contain both key names.
     t.starts_with('{') && t.ends_with('}') && t.contains("\"name\"") && t.contains("\"arguments\"")
+}
+
+// ---------------------------------------------------------------------------
+// function_name/function_arg format (Priority 5)
+// ---------------------------------------------------------------------------
+
+fn looks_like_function_name_format(content: &str) -> bool {
+    let t = content.trim();
+    t.starts_with('{') && t.ends_with('}') && t.contains("\"function_name\"")
+}
+
+/// Parse {"function_name":"tool","function_arg":{...}} into a ToolCall.
+fn parse_function_name_format(json_str: &str) -> Result<ToolCall, BackendError> {
+    let v: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| BackendError::StreamParse(format!("invalid tool call JSON: {e}")))?;
+
+    let name = v["function_name"]
+        .as_str()
+        .ok_or_else(|| {
+            BackendError::StreamParse("tool call missing 'function_name' field".to_owned())
+        })?
+        .to_owned();
+
+    let arguments = match &v["function_arg"] {
+        serde_json::Value::String(s) => s.clone(),
+        other => {
+            serde_json::to_string(other).map_err(|e| BackendError::StreamParse(e.to_string()))?
+        }
+    };
+
+    Ok(ToolCall {
+        id: format!("call_{}", uuid::Uuid::new_v4().simple()),
+        kind: "function".to_owned(),
+        function: domain::entities::tool::FunctionCall { name, arguments },
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -441,5 +484,35 @@ mod tests {
         };
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls[0].function.name, "structured_fn");
+    }
+
+    // --- Priority 5: function_name/function_arg format ---
+
+    #[test]
+    fn function_name_format_single_call() {
+        let content = r#"{"function_name":"file_read","function_arg":{"path":"README.md"}}"#;
+        let msg = plain_msg(content);
+        let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.name, "file_read");
+        let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
+        assert_eq!(args["path"], "README.md");
+    }
+
+    #[test]
+    fn function_name_format_list_dir() {
+        let content = r#"{"function_name":"list_dir","function_arg":{"path":"."}}"#;
+        let msg = plain_msg(content);
+        let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
+        assert_eq!(calls[0].function.name, "list_dir");
+    }
+
+    #[test]
+    fn function_name_without_function_arg_returns_empty_args() {
+        let content = r#"{"function_name":"list_dir","function_arg":{}}"#;
+        let msg = plain_msg(content);
+        let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
+        assert_eq!(calls[0].function.name, "list_dir");
+        assert_eq!(calls[0].function.arguments, "{}");
     }
 }

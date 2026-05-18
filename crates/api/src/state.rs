@@ -112,16 +112,17 @@ impl AppState {
         let workspace_root = std::path::PathBuf::from(&config.workspace_root);
 
         let system_prompt = format!(
-            "You are a coding assistant with tool access. \
-            The workspace root is: {workspace_root}. \
-            RULES (follow exactly, no exceptions): \
-            1. When asked about files or directories, call list_dir or find IMMEDIATELY. Do NOT describe what you will do first. \
-            2. When asked to read a file, call file_read IMMEDIATELY. \
-            3. When asked to search code, call search IMMEDIATELY. \
-            4. ALWAYS use relative paths from the workspace root (e.g. \"src/main.rs\", not absolute paths). \
-            5. NEVER write shell commands like `ls` or `cat` as text. Call the tool instead. \
-            6. NEVER say 'Let me...' or 'I will...' before a tool call. Just call the tool. \
-            Available tools: file_read, search, find, list_dir.",
+            "You are a coding assistant. Workspace root: {workspace_root}. \
+            You have tools: file_read, list_dir, find, search. \
+            CRITICAL RULES — no exceptions: \
+            (1) To list a directory, output ONLY this JSON, nothing else: \
+            {{\"name\":\"list_dir\",\"arguments\":{{\"path\":\".\"}}}}\n\
+            (2) To read a file, output ONLY this JSON, nothing else: \
+            {{\"name\":\"file_read\",\"arguments\":{{\"path\":\"RELATIVE_PATH\"}}}}\n\
+            (3) NEVER output {{\"function_name\":...}} — that format is WRONG. Use {{\"name\":...}} only.\n\
+            (4) NEVER output prose, shell commands, or explanations before a tool call. Just the JSON.\n\
+            (5) Paths MUST be relative to the workspace root (e.g. \"README.md\", \"src/main.rs\").\n\
+            (6) When the user says 'read FILE', immediately output the file_read JSON for that file.",
             workspace_root = workspace_root.display()
         );
         let pipeline = PromptPipeline::new(
