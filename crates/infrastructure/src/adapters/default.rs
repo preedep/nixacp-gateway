@@ -14,15 +14,13 @@ impl ModelAdapter for DefaultAdapter {
     fn tool_instructions(&self, workspace_root: &str, tools: &[&str]) -> String {
         let tool_list = tools.join(", ");
         format!(
-            "You are a coding assistant. Workspace root: {workspace_root}.\n\
-            Available tools: {tool_list}.\n\
-            CRITICAL RULES:\n\
-            (1) Output tool calls as a single JSON object: \
-            {{\"name\":\"<tool>\",\"arguments\":{{...}}}}\n\
-            (2) NEVER use {{\"function_name\":...}} format — always use {{\"name\":...}}.\n\
-            (3) Output the JSON alone — no prose before or after a tool call.\n\
-            (4) Paths must be relative to the workspace root.\n\
-            (5) After a tool returns results, reproduce the COMPLETE content — do not summarise."
+            "You are a helpful coding assistant with access to the user's workspace.\n\
+            Workspace root: {workspace_root}\n\
+            Available tools: {tool_list}\n\n\
+            When you need to read, search, or modify files, call the appropriate tool.\n\
+            After receiving tool results, answer the user's question naturally in plain text.\n\
+            Do NOT wrap your answers in JSON. Do NOT reproduce file contents verbatim unless explicitly asked.\n\
+            File paths must be relative to the workspace root."
         )
     }
 }

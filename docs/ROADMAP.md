@@ -221,8 +221,8 @@ src/main.rs  |  gateway.toml
 - `list_dir` → `list_directory` ✅
 
 *New native tools:*
-- `infrastructure/tools/find.rs` — `FindTool` (`find_files`) ✅: recursive file search by glob pattern with workspace confinement; `max_depth` support
-- `infrastructure/tools/find.rs` — `ListTool` (`list_directory`) ✅: immediate directory listing, `[dir]/[file]` prefixes, sorted output
+- `infrastructure/tools/find.rs` — `FindTool` (`find_files`) ✅: recursive file search by glob pattern with workspace confinement; `max_depth` support; description guides model to use `pattern="*"` for full recursive listings
+- `infrastructure/tools/find.rs` — `ListTool` (`list_directory`) ✅: immediate (non-recursive) directory listing, `[dir]/[file]` prefixes, sorted output; description explicitly directs model to `find_files` when recursive listing needed
 - `infrastructure/tools/write_file.rs` — `WriteFileTool` (`write_file`) ✅: create or overwrite a file inside workspace root; creates parent directories; rejects paths outside workspace via `canonicalize`
 - `infrastructure/tools/patch_file.rs` — `PatchFileTool` (`patch_file`) ✅: str_replace — find unique `old_str`, replace with `new_str`; errors if not found or ambiguous
 - `infrastructure/tools/bash.rs` — `BashTool`: allowlist-only shell execution; denies `;`, `|`, `&&`, `||`, `>`, `<`, `` ` ``, `$(...)`; 30-second timeout; working directory locked to workspace root
@@ -244,8 +244,9 @@ src/main.rs  |  gateway.toml
 - `src/main.rs` — `GATEWAY_WORKSPACE_ROOT` env var ✅: figment config now correctly maps `GATEWAY_WORKSPACE_ROOT` → `workspace_root` (was broken by `split("_")` mapping it to nested key `workspace.root`); startup log confirms active workspace root
 - `infrastructure/tools/normalizer.rs` — Priority 5 format ✅: added `{"function_name":...,"function_arg":{...}}` detection; some Qwen2.5-coder variants emit this non-standard format instead of `{"name":...,"arguments":...}`
 - `api/openai/chat.rs` — `max_tokens` floor ✅: tool-loop requests always use at least 4096 tokens (Ollama default was 128, enough for ~2 lines only)
-- `application/tool_loop/mod.rs` — read_file fallback ✅: when model's final response is shorter than the file content it read, raw file content is appended automatically; model summarisation no longer loses file data
-- `api/state.rs` — system prompt ✅: explicit correct tool-call JSON format shown; wrong `function_name` format forbidden by name; rule to reproduce complete tool output added
+- `application/tool_loop/mod.rs` — read_file fallback removed ✅: length-based heuristic that appended raw file content when model response was shorter than file was removed; it incorrectly triggered on summaries and caused file dumps instead of natural answers
+- `infrastructure/adapters/{qwen,deepseek,default}.rs` — system prompt rewritten ✅: removed "reproduce COMPLETE content" rule that caused JSON template responses; model now answers naturally in plain text after tool results; "do NOT wrap answers in JSON" rule added
+- `api/openai/responses.rs` — echo path ✅: `/responses` now detects when last message is already an assistant turn (Zed title-generation follow-up) and echoes it back without re-calling the model; prevents Qwen safety-filter refusals on the second Ollama call
 
 *Two-registry plumbing:*
 - `application/tool_loop`: `ToolLoopOrchestrator` gains `McpToolRegistry` field (empty for now); resolution order: native first, MCP second
@@ -276,8 +277,11 @@ docs/architecture/adr-004-tool-naming-convention.md
 - `workspace_root` configurable in `gateway.toml` ✅
 - `GATEWAY_WORKSPACE_ROOT` env var correctly overrides `workspace_root` at runtime ✅
 - Tool definitions injected with system prompt visible to model (Zed system message preserved + appended) ✅
-- Zed agent chat: `list_directory` tool executes and returns directory listing end-to-end ✅
-- Zed agent chat: `read_file` returns complete file contents end-to-end ✅
+- Zed agent chat: `list_directory` returns immediate directory listing end-to-end ✅
+- Zed agent chat: `find_files pattern="*"` returns full recursive listing including sub-folders ✅
+- Zed agent chat: `read_file` returns complete file contents; model answers naturally (no JSON wrapping) ✅
+- Zed agent chat: summarize file produces natural-language summary, not raw file dump ✅
+- `/responses` echo path: title-generation follow-up handled without second Ollama call ✅
 - `write_file` creates and overwrites files; rejects `../` traversal ✅
 - `patch_file` applies str_replace; errors on old_str not found or ambiguous ✅
 - `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`

@@ -18,14 +18,13 @@ impl ModelAdapter for DeepSeekAdapter {
     fn tool_instructions(&self, workspace_root: &str, tools: &[&str]) -> String {
         let tool_list = tools.join(", ");
         format!(
-            "You are a coding assistant. Workspace root: {workspace_root}.\n\
-            Available tools: {tool_list}.\n\
-            CRITICAL RULES:\n\
-            (1) Output tool calls as a single JSON object: \
-            {{\"name\":\"<tool>\",\"arguments\":{{...}}}}\n\
-            (2) Do NOT wrap tool calls in markdown fences — output raw JSON only.\n\
-            (3) Paths must be relative to the workspace root.\n\
-            (4) After a tool returns results, reproduce the COMPLETE content — do not summarise."
+            "You are a helpful coding assistant with access to the user's workspace.\n\
+            Workspace root: {workspace_root}\n\
+            Available tools: {tool_list}\n\n\
+            When you need to read, search, or modify files, call the appropriate tool.\n\
+            After receiving tool results, answer the user's question naturally in plain text.\n\
+            Do NOT wrap your answers in JSON. Do NOT reproduce file contents verbatim unless explicitly asked.\n\
+            File paths must be relative to the workspace root."
         )
     }
 }

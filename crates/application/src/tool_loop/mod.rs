@@ -44,26 +44,11 @@ impl ToolLoopOrchestrator {
         mut request: ConversationRequest,
     ) -> Result<ConversationResponse, ToolLoopError> {
         let mut last_response = None;
-        // Track whether the last tool call was a file_read and its content,
-        // so we can append it if the model's final answer truncates the content.
-        let mut last_file_read_result: Option<String> = None;
 
         for _ in 0..MAX_PASSES {
             let response = self.backend.complete(request.clone()).await?;
 
             if !response.is_tool_call() {
-                // file_read returns the full file; the model often summarises it.
-                // If the model's response is shorter than the file content it read,
-                // append the raw file content after the model's intro sentence.
-                if let Some(ref file_content) = last_file_read_result {
-                    if response.content.len() < file_content.len() {
-                        let appended = format!("{}\n\n{}", response.content.trim(), file_content);
-                        return Ok(ConversationResponse {
-                            content: appended,
-                            ..response
-                        });
-                    }
-                }
                 return Ok(response);
             }
 
@@ -112,18 +97,6 @@ impl ToolLoopOrchestrator {
                     .position(|c| c.id == r.tool_call_id)
                     .unwrap_or(usize::MAX)
             });
-
-            // Track file_read results (successful only) for the fallback append.
-            last_file_read_result = None;
-            for (call, result) in tool_calls.iter().zip(results.iter()) {
-                if call.function.name == "read_file" {
-                    if let domain::entities::tool::ToolResultContent::Text(ref text) =
-                        result.content
-                    {
-                        last_file_read_result = Some(text.clone());
-                    }
-                }
-            }
 
             request
                 .messages
@@ -261,10 +234,9 @@ mod tests {
     #[tokio::test]
     async fn single_tool_call_one_pass() {
         let call = ToolCall::new("c1", "read_file", r#"{"path":"a.rs"}"#);
-        // Final response is longer than tool output so the read_file fallback does not fire.
         let backend = Arc::new(FakeBackend::new(vec![
             tool_call_response(vec![call.clone()]),
-            plain_response("file was read — it defines the main entry point of the application"),
+            plain_response("file was read"),
         ]));
         let tool: Arc<dyn ToolRuntime> = Arc::new(FakeTool {
             tool_name: "read_file",
@@ -273,10 +245,7 @@ mod tests {
         let orch = ToolLoopOrchestrator::new(backend, vec![tool]);
 
         let resp = orch.run(base_request()).await.unwrap();
-        assert_eq!(
-            resp.content,
-            "file was read — it defines the main entry point of the application"
-        );
+        assert_eq!(resp.content, "file was read");
     }
 
     #[tokio::test]
@@ -303,10 +272,9 @@ mod tests {
             ToolCall::new("c1", "read_file", r#"{"path":"a.rs"}"#),
             ToolCall::new("c2", "search_files", r#"{"query":"fn main"}"#),
         ];
-        // Final response longer than read_file output so the fallback append does not fire.
         let backend = Arc::new(FakeBackend::new(vec![
             tool_call_response(calls),
-            plain_response("both tools completed — the file and search results were processed"),
+            plain_response("both done"),
         ]));
         let tools: Vec<Arc<dyn ToolRuntime>> = vec![
             Arc::new(FakeTool {
@@ -321,10 +289,7 @@ mod tests {
         let orch = ToolLoopOrchestrator::new(backend, tools);
 
         let resp = orch.run(base_request()).await.unwrap();
-        assert_eq!(
-            resp.content,
-            "both tools completed — the file and search results were processed"
-        );
+        assert_eq!(resp.content, "both done");
     }
 
     #[tokio::test]

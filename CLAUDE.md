@@ -229,7 +229,7 @@ All structured logs follow [Standard Application Log v1.0](https://github.com/pr
 workspace_root = "/path/to/your/project"   # default: current working directory
 ```
 
-All built-in tools (`file_read`, `search`, `find`, `list_dir`) are confined to this directory via `fs::canonicalize` — paths outside it return `ToolError::Unauthorized`. The system prompt includes this path and instructs the model to use relative paths. Override at runtime: `GATEWAY_WORKSPACE_ROOT=/other/path`.
+All built-in tools (`read_file`, `search_files`, `find_files`, `list_directory`, `write_file`, `patch_file`) are confined to this directory via `fs::canonicalize` — paths outside it return `ToolError::Unauthorized`. The system prompt includes this path and instructs the model to use relative paths. Override at runtime: `GATEWAY_WORKSPACE_ROOT=/other/path`.
 
 ### `[log]` config block (`gateway.toml`)
 

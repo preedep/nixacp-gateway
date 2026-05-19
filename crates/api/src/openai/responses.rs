@@ -10,7 +10,6 @@ use axum::{
         IntoResponse, Response,
     },
 };
-use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -141,10 +140,6 @@ pub async fn responses_handler(State(state): State<Arc<AppState>>, body: Bytes) 
 
     let model = state.config.ollama.default_model.clone();
     let messages = input_to_messages(req.input);
-    // Always inject gateway tools — ignore what the client sent (Zed sends its
-    // own editor tools we cannot execute).
-    let tool_definitions = state.tool_loop.tool_definitions();
-    let has_tools = true;
 
     if messages.is_empty() {
         return (
@@ -156,6 +151,18 @@ pub async fn responses_handler(State(state): State<Arc<AppState>>, body: Bytes) 
             .into_response();
     }
 
+    // Only run the tool loop when the conversation needs a new model response.
+    // If the last message is already an assistant message, Zed is delivering
+    // context from a prior turn — echo it back without re-calling the model.
+    let needs_completion = messages
+        .last()
+        .map(|m| m.role != domain::entities::message::Role::Assistant)
+        .unwrap_or(true);
+
+    // Always inject gateway tools — ignore what the client sent (Zed sends its
+    // own editor tools we cannot execute).
+    let tool_definitions = state.tool_loop.tool_definitions();
+
     let domain_req = ConversationRequest {
         id: Uuid::new_v4(),
         model: ModelId::new(&model),
@@ -166,14 +173,17 @@ pub async fn responses_handler(State(state): State<Arc<AppState>>, body: Bytes) 
         tool_definitions,
     };
 
-    let cancel = state.gateway_cancel.child_token();
-
-    if has_tools {
-        // Tool loop: run synchronously, return completed response in Responses API format
+    if needs_completion {
         responses_tool_loop(state, domain_req, model).await
     } else {
-        // Streaming: emit Responses API SSE events
-        responses_stream(state, domain_req, model, cancel).await
+        // Last message is already assistant — echo it back so Zed renders it.
+        let last_text = domain_req
+            .messages
+            .last()
+            .and_then(|m| m.text_content())
+            .map(str::to_owned)
+            .unwrap_or_default();
+        responses_echo(last_text, model).await
     }
 }
 
@@ -193,7 +203,6 @@ async fn responses_tool_loop(
         }
     };
 
-    // Stream the tool-loop result as Responses API SSE so Zed's UI renders it.
     let response_id = format!("resp_{}", resp.id.simple());
     let item_id = format!("msg_{}", resp.id.simple());
     let full_text = resp.content.clone();
@@ -285,134 +294,61 @@ async fn responses_tool_loop(
         .into_response()
 }
 
-async fn responses_stream(
-    state: Arc<AppState>,
-    domain_req: ConversationRequest,
-    model: String,
-    cancel: tokio_util::sync::CancellationToken,
-) -> Response {
-    let mut backend_stream = match state.chat.stream(domain_req).await {
-        Ok(s) => s,
-        Err(e) => {
-            return (
-                axum::http::StatusCode::BAD_GATEWAY,
-                axum::Json(json!({"error": {"message": e.to_string(), "type": "upstream_error"}})),
-            )
-                .into_response();
-        }
-    };
-
-    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
+/// Echo an already-completed assistant turn back to Zed without calling the model.
+/// Used when `/responses` receives a conversation whose last message is already
+/// an assistant message — Zed is delivering context, not requesting new generation.
+async fn responses_echo(text: String, model: String) -> Response {
     let response_id = format!("resp_{}", Uuid::new_v4().simple());
     let item_id = format!("msg_{}", Uuid::new_v4().simple());
 
+    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(8);
     tokio::spawn(async move {
         let send = |event: Value| {
             let tx = tx.clone();
             async move {
                 let data = serde_json::to_string(&event).unwrap_or_default();
-                let _ = tokio::time::timeout(
-                    Duration::from_secs(60),
-                    tx.send(Ok(Event::default().data(data))),
-                )
-                .await;
+                let _ = tx.send(Ok(Event::default().data(data))).await;
             }
         };
 
-        // response.created
         send(json!({
             "type": "response.created",
             "response": {"id": response_id, "object": "response", "model": model, "status": "in_progress"}
         })).await;
-
-        // response.output_item.added — the assistant message item
         send(json!({
             "type": "response.output_item.added",
             "output_index": 0,
             "item": {"id": item_id, "type": "message", "role": "assistant", "content": []}
-        }))
-        .await;
-
-        // content part added
+        })).await;
         send(json!({
             "type": "response.content_part.added",
-            "output_index": 0,
-            "content_index": 0,
+            "output_index": 0, "content_index": 0,
             "part": {"type": "output_text", "text": ""}
-        }))
-        .await;
-
-        let mut full_text = String::new();
-
-        loop {
-            let next = tokio::select! {
-                biased;
-                _ = cancel.cancelled() => break,
-                result = tokio::time::timeout(Duration::from_secs(30), backend_stream.next()) => result,
-            };
-
-            let chunk_opt = match next {
-                Ok(opt) => opt,
-                Err(_) => break,
-            };
-
-            let Some(result) = chunk_opt else { break };
-
-            match result {
-                Ok(chunk) if chunk.is_terminal() => break,
-                Ok(chunk) => {
-                    full_text.push_str(&chunk.delta);
-                    send(json!({
-                        "type": "response.output_text.delta",
-                        "output_index": 0,
-                        "content_index": 0,
-                        "delta": chunk.delta
-                    }))
-                    .await;
-                }
-                Err(_) => break,
-            }
-        }
-
-        // content part done
+        })).await;
+        send(json!({
+            "type": "response.output_text.delta",
+            "output_index": 0, "content_index": 0,
+            "delta": text
+        })).await;
         send(json!({
             "type": "response.output_text.done",
-            "output_index": 0,
-            "content_index": 0,
-            "text": full_text
-        }))
-        .await;
-
-        // output item done
+            "output_index": 0, "content_index": 0,
+            "text": text
+        })).await;
         send(json!({
             "type": "response.output_item.done",
             "output_index": 0,
-            "item": {
-                "id": item_id,
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": full_text}]
-            }
-        }))
-        .await;
-
-        // response.completed
+            "item": {"id": item_id, "type": "message", "role": "assistant",
+                     "content": [{"type": "output_text", "text": text}]}
+        })).await;
         send(json!({
             "type": "response.completed",
             "response": {
-                "id": response_id,
-                "object": "response",
-                "model": model,
-                "status": "completed",
-                "output": [{
-                    "id": item_id,
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": full_text}]
-                }]
+                "id": response_id, "object": "response", "model": model, "status": "completed",
+                "output": [{"id": item_id, "type": "message", "role": "assistant",
+                            "content": [{"type": "output_text", "text": text}]}]
             }
-        }))
-        .await;
+        })).await;
     });
 
     Sse::new(ReceiverStream::new(rx))

@@ -33,17 +33,17 @@ impl ToolRuntime for FindTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
             "find_files",
-            "Recursively find files or directories matching a glob pattern inside the workspace.",
+            "Recursively list ALL files and directories inside the workspace, including subdirectories. Use pattern=\"*\" to list everything. Use this instead of list_directory when the user wants a full recursive listing or asks to include sub-folders.",
             json!({
                 "type": "object",
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "Glob pattern to match filenames, e.g. \"*.rs\" or \"Cargo.toml\""
+                        "description": "Glob pattern to match filenames, e.g. \"*\" for all files, \"*.rs\" for Rust files, \"Cargo.toml\" for exact name"
                     },
                     "path": {
                         "type": "string",
-                        "description": "Optional sub-directory to search within, e.g. \"src\""
+                        "description": "Optional sub-directory to search within, e.g. \"src\". Defaults to workspace root."
                     },
                     "max_depth": {
                         "type": "integer",
@@ -129,7 +129,7 @@ impl ToolRuntime for ListTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
             "list_directory",
-            "List the immediate contents of a directory in the workspace. Shows files and sub-directories.",
+            "List the immediate (non-recursive) contents of a single directory. Shows only direct children — files and sub-directory names, NOT their contents. Use find_files with pattern=\"*\" if you need to list files recursively including sub-folders.",
             json!({
                 "type": "object",
                 "properties": {
