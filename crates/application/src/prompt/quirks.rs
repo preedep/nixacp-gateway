@@ -1,15 +1,24 @@
+use std::sync::Arc;
+
 use domain::entities::message::{ContentPart, Message};
 
-/// Strips model-specific injection tokens that leak into user messages.
+use super::ModelAdapterRegistry;
+
+/// Strips model-specific injection tokens by delegating to the registered `ModelAdapter`.
 ///
-/// Qwen models sometimes surface `<|im_start|>` / `<|im_end|>` chat-template
-/// tokens in the raw user input. DeepSeek-R1 leaks `<think>…</think>` reasoning
-/// blocks. Both corrupt the conversation history if forwarded verbatim.
-#[derive(Default)]
-pub struct ModelQuirksTransformer;
+/// Previously contained hardcoded `if model.contains("qwen")` branches. Now any model
+/// quirk is handled by its adapter — add a new adapter, get cleaning for free.
+pub struct ModelQuirksTransformer {
+    registry: Arc<ModelAdapterRegistry>,
+}
 
 impl ModelQuirksTransformer {
+    pub fn new(registry: Arc<ModelAdapterRegistry>) -> Self {
+        Self { registry }
+    }
+
     pub fn apply(&self, model: &str, messages: Vec<Message>) -> Vec<Message> {
+        let adapter = self.registry.for_model(model);
         messages
             .into_iter()
             .map(|mut msg| {
@@ -18,7 +27,7 @@ impl ModelQuirksTransformer {
                     .into_iter()
                     .map(|part| {
                         let ContentPart::Text(text) = part;
-                        ContentPart::Text(clean(model, text))
+                        ContentPart::Text(adapter.clean_content(text))
                     })
                     .collect();
                 msg
@@ -27,79 +36,69 @@ impl ModelQuirksTransformer {
     }
 }
 
-fn clean(model: &str, mut text: String) -> String {
-    // Qwen chat-template tokens that must never appear in the wire payload.
-    if model.contains("qwen") || model.contains("Qwen") {
-        text = text.replace("<|im_start|>", "");
-        text = text.replace("<|im_end|>", "");
-    }
-
-    // DeepSeek-R1 reasoning traces — strip entire <think>…</think> blocks.
-    if model.contains("deepseek") || model.contains("DeepSeek") {
-        text = strip_think_tags(text);
-    }
-
-    text.trim().to_owned()
-}
-
-fn strip_think_tags(text: String) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(start) = rest.find("<think>") {
-        out.push_str(&rest[..start]);
-        match rest[start..].find("</think>") {
-            Some(end) => rest = &rest[start + end + "</think>".len()..],
-            None => {
-                // Unclosed tag — drop everything after <think>.
-                return out;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use domain::entities::message::Message;
+    use domain::ports::model_adapter::ModelAdapter;
 
-    #[test]
-    fn strips_qwen_tokens() {
-        let t = ModelQuirksTransformer;
-        let msgs = vec![Message::user("<|im_start|>user\nhello<|im_end|>")];
-        let out = t.apply("qwen2.5-coder:14b", msgs);
-        let text = out[0].text_content().unwrap();
-        assert!(!text.contains("<|im_start|>"));
-        assert!(!text.contains("<|im_end|>"));
-        assert!(text.contains("hello"));
+    struct StripBracketsAdapter;
+    impl ModelAdapter for StripBracketsAdapter {
+        fn matches(&self, model: &str) -> bool {
+            model == "brackets"
+        }
+        fn clean_content(&self, text: String) -> String {
+            text.replace(['[', ']'], "").trim().to_owned()
+        }
+        fn tool_instructions(&self, _: &str, _: &[&str]) -> String {
+            String::new()
+        }
+    }
+
+    struct NoopAdapter;
+    impl ModelAdapter for NoopAdapter {
+        fn matches(&self, _: &str) -> bool {
+            true
+        }
+        fn tool_instructions(&self, _: &str, _: &[&str]) -> String {
+            String::new()
+        }
+    }
+
+    fn registry_with_strip() -> Arc<ModelAdapterRegistry> {
+        Arc::new(ModelAdapterRegistry::new(vec![
+            Arc::new(StripBracketsAdapter),
+            Arc::new(NoopAdapter),
+        ]))
     }
 
     #[test]
-    fn strips_deepseek_think_tags() {
-        let t = ModelQuirksTransformer;
-        let msgs = vec![Message::user("<think>reasoning</think>final answer")];
-        let out = t.apply("deepseek-coder:7b", msgs);
-        let text = out[0].text_content().unwrap();
-        assert!(!text.contains("<think>"));
-        assert!(!text.contains("reasoning"));
-        assert_eq!(text, "final answer");
-    }
-
-    #[test]
-    fn no_change_for_unknown_model() {
-        let t = ModelQuirksTransformer;
-        let msgs = vec![Message::user("hello world")];
-        let out = t.apply("llama3:8b", msgs);
+    fn delegates_cleaning_to_adapter() {
+        let t = ModelQuirksTransformer::new(registry_with_strip());
+        let msgs = vec![Message::user("[hello] world")];
+        let out = t.apply("brackets", msgs);
         assert_eq!(out[0].text_content().unwrap(), "hello world");
     }
 
     #[test]
-    fn unclosed_think_tag_drops_tail() {
-        let t = ModelQuirksTransformer;
-        let msgs = vec![Message::user("before<think>unclosed")];
-        let out = t.apply("deepseek-r1:7b", msgs);
-        let text = out[0].text_content().unwrap();
-        assert_eq!(text, "before");
+    fn no_change_for_noop_adapter() {
+        let t = ModelQuirksTransformer::new(registry_with_strip());
+        let msgs = vec![Message::user("[hello] world")];
+        let out = t.apply("other-model", msgs);
+        assert_eq!(out[0].text_content().unwrap(), "[hello] world");
+    }
+
+    #[test]
+    fn applies_to_all_messages() {
+        let t = ModelQuirksTransformer::new(registry_with_strip());
+        let msgs = vec![
+            Message::user("[first]"),
+            Message::user("[second]"),
+        ];
+        let out = t.apply("brackets", msgs);
+        assert_eq!(out[0].text_content().unwrap(), "first");
+        assert_eq!(out[1].text_content().unwrap(), "second");
     }
 }

@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn assistant_with_tool_calls_serde_round_trip() {
         let calls = vec![
-            ToolCall::new("c1", "file_read", r#"{"path":"src/lib.rs"}"#),
+            ToolCall::new("c1", "read_file", r#"{"path":"src/lib.rs"}"#),
             ToolCall::new("c2", "search", r#"{"query":"async fn"}"#),
         ];
         let m = Message::assistant_with_tool_calls(calls);

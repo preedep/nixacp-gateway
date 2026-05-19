@@ -11,11 +11,11 @@ use domain::ports::tool_runtime::ToolRuntime;
 /// Both path traversal (`../`) and absolute paths outside the root are rejected
 /// via canonicalization — the resolved path must be a descendant of the
 /// canonicalized workspace root.
-pub struct FileReadTool {
+pub struct ReadFileTool {
     workspace_root: PathBuf,
 }
 
-impl FileReadTool {
+impl ReadFileTool {
     pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
         Self {
             workspace_root: workspace_root.into(),
@@ -24,14 +24,14 @@ impl FileReadTool {
 }
 
 #[async_trait]
-impl ToolRuntime for FileReadTool {
+impl ToolRuntime for ReadFileTool {
     fn name(&self) -> &str {
-        "file_read"
+        "read_file"
     }
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
-            "file_read",
+            "read_file",
             "Read the contents of a file inside the workspace. Use relative paths.",
             json!({
                 "type": "object",
@@ -97,9 +97,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn temp_workspace() -> (TempDir, FileReadTool) {
+    fn temp_workspace() -> (TempDir, ReadFileTool) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let tool = FileReadTool::new(dir.path());
+        let tool = ReadFileTool::new(dir.path());
         (dir, tool)
     }
 
@@ -109,7 +109,7 @@ mod tests {
     }
 
     fn call_with_path(path: &str) -> ToolCall {
-        ToolCall::new("call_1", "file_read", format!(r#"{{"path":"{path}"}}"#))
+        ToolCall::new("call_1", "read_file", format!(r#"{{"path":"{path}"}}"#))
     }
 
     #[tokio::test]
@@ -146,7 +146,7 @@ mod tests {
         let outside = dir.path().parent().unwrap().to_str().unwrap().to_owned();
         let call = ToolCall::new(
             "call_abs",
-            "file_read",
+            "read_file",
             format!(r#"{{"path":"{outside}"}}"#),
         );
         let err = tool.execute(&call).await.unwrap_err();
@@ -169,7 +169,7 @@ mod tests {
     #[tokio::test]
     async fn returns_invalid_arguments_when_path_missing() {
         let (_dir, tool) = temp_workspace();
-        let call = ToolCall::new("call_bad", "file_read", "{}");
+        let call = ToolCall::new("call_bad", "read_file", "{}");
         let err = tool.execute(&call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),
@@ -180,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn returns_invalid_arguments_on_bad_json() {
         let (_dir, tool) = temp_workspace();
-        let call = ToolCall::new("call_bad2", "file_read", "not json");
+        let call = ToolCall::new("call_bad2", "read_file", "not json");
         let err = tool.execute(&call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),

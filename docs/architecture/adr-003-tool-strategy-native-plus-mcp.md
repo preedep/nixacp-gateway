@@ -201,9 +201,17 @@ also now explicitly forbids this format by name.
 `num_predict` is 128 when `max_tokens` is absent, which is enough for approximately 2 lines of
 output — too short for any real file content.
 
-**`file_read` fallback content append** — `ToolLoopOrchestrator` now tracks the last successful
-`file_read` result. If the model's final response is shorter than the file content it received,
+**`read_file` fallback content append** — `ToolLoopOrchestrator` now tracks the last successful
+`read_file` result. If the model's final response is shorter than the file content it received,
 the raw file content is appended after the model's intro sentence. This is a reliable fallback
 for the common case where a 14B model summarises file contents instead of reproducing them.
-The fallback is `file_read`-specific and only fires on successful reads; it does not affect
-`list_dir`, `search`, or `find` responses.
+The fallback is `read_file`-specific and only fires on successful reads; it does not affect
+`list_directory`, `search_files`, or `find_files` responses.
+
+**`ModelAdapter` trait** — `domain/ports/model_adapter.rs` introduces a per-model plugin trait
+replacing the hardcoded `if model.contains("qwen")` blocks in `ModelQuirksTransformer` and the
+static system prompt string in `api/state.rs`. Each adapter implements `matches()`, `clean_content()`,
+`tool_instructions()`, and `tool_max_tokens()`. Built-in adapters: `QwenAdapter`, `DeepSeekAdapter`,
+`DefaultAdapter`. Adding support for a new LLM requires only implementing `ModelAdapter` in
+`infrastructure/adapters/` and registering it — no changes to existing application or domain code.
+See [ADR-005](adr-005-model-adapter-trait.md).

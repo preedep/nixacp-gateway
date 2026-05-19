@@ -9,7 +9,7 @@ use crate::entities::tool::{ToolCall, ToolDefinition, ToolError, ToolResult};
 /// implementation by matching `ToolCall.function.name` against the registry.
 #[async_trait]
 pub trait ToolRuntime: Send + Sync {
-    /// The tool name this runtime handles (e.g. `"file_read"`, `"search"`).
+    /// The tool name this runtime handles (e.g. `"read_file"`, `"search_files"`).
     fn name(&self) -> &str;
 
     /// The OpenAI-compatible tool definition advertised to the model.

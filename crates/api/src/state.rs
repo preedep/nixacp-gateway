@@ -2,16 +2,19 @@ use std::sync::Arc;
 
 use application::chat::ChatService;
 use application::compression::{CompressionService, SlidingWindowCompressor};
-use application::prompt::{ModelQuirksTransformer, PromptPipeline, SystemPromptBuilder};
+use application::prompt::{ModelAdapterRegistry, ModelQuirksTransformer, PromptPipeline, SystemPromptBuilder};
 use application::reflection::ReflectionOrchestrator;
 use application::tool_loop::ToolLoopOrchestrator;
 use domain::ports::tool_runtime::ToolRuntime;
 use infrastructure::acp::AcpSessionStore;
+use infrastructure::adapters::{DeepSeekAdapter, DefaultAdapter, QwenAdapter};
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
 use infrastructure::token_counter::TiktokenCounter;
-use infrastructure::tools::file_read::FileReadTool;
+use infrastructure::tools::file_read::ReadFileTool;
 use infrastructure::tools::find::{FindTool, ListTool};
-use infrastructure::tools::search::SearchTool;
+use infrastructure::tools::patch_file::PatchFileTool;
+use infrastructure::tools::search::SearchFilesTool;
+use infrastructure::tools::write_file::WriteFileTool;
 use logging::layer::LogFormat;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
@@ -111,24 +114,31 @@ impl AppState {
 
         let workspace_root = std::path::PathBuf::from(&config.workspace_root);
 
-        let system_prompt = format!(
-            "You are a coding assistant. Workspace root: {workspace_root}. \
-            You have tools: file_read, list_dir, find, search. \
-            CRITICAL RULES — no exceptions: \
-            (1) To list a directory, output ONLY this JSON, nothing else: \
-            {{\"name\":\"list_dir\",\"arguments\":{{\"path\":\".\"}}}}\n\
-            (2) To read a file, output ONLY this JSON, nothing else: \
-            {{\"name\":\"file_read\",\"arguments\":{{\"path\":\"RELATIVE_PATH\"}}}}\n\
-            (3) NEVER output {{\"function_name\":...}} — that format is WRONG. Use {{\"name\":...}} only.\n\
-            (4) NEVER output prose, shell commands, or explanations before a tool call. Just the JSON.\n\
-            (5) Paths MUST be relative to the workspace root (e.g. \"README.md\", \"src/main.rs\").\n\
-            (6) When the user says 'read FILE', immediately output the file_read JSON for that file.\n\
-            (7) After a tool returns results, reproduce the COMPLETE content in your response. Do NOT summarise or truncate.",
-            workspace_root = workspace_root.display()
-        );
+        // Build tools first so we can pass their names to SystemPromptBuilder.
+        let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
+            Arc::new(ReadFileTool::new(workspace_root.clone())),
+            Arc::new(WriteFileTool::new(workspace_root.clone())),
+            Arc::new(PatchFileTool::new(workspace_root.clone())),
+            Arc::new(SearchFilesTool::new(workspace_root.clone(), "rg")),
+            Arc::new(FindTool::new(workspace_root.clone())),
+            Arc::new(ListTool::new(workspace_root.clone())),
+        ];
+        let tool_names: Vec<String> = built_in_tools.iter().map(|t| t.name().to_owned()).collect();
+
+        // Model adapter registry — checked in order; DefaultAdapter must be last.
+        let adapter_registry = Arc::new(ModelAdapterRegistry::new(vec![
+            Arc::new(QwenAdapter),
+            Arc::new(DeepSeekAdapter),
+            Arc::new(DefaultAdapter),
+        ]));
+
         let pipeline = PromptPipeline::new(
-            SystemPromptBuilder::with_default(system_prompt),
-            ModelQuirksTransformer,
+            SystemPromptBuilder::new(
+                adapter_registry.clone(),
+                workspace_root.to_string_lossy().as_ref(),
+                tool_names,
+            ),
+            ModelQuirksTransformer::new(adapter_registry),
         );
         let compression = CompressionService::new(
             counter.clone(),
@@ -136,13 +146,6 @@ impl AppState {
         );
 
         let chat = ChatService::new(ollama.clone(), pipeline, compression, counter);
-
-        let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
-            Arc::new(FileReadTool::new(workspace_root.clone())),
-            Arc::new(SearchTool::new(workspace_root.clone(), "rg")),
-            Arc::new(FindTool::new(workspace_root.clone())),
-            Arc::new(ListTool::new(workspace_root.clone())),
-        ];
         let tool_loop = ToolLoopOrchestrator::new(ollama.clone(), built_in_tools);
         let reflection = ReflectionOrchestrator::new(ollama);
 

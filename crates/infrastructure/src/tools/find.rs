@@ -27,12 +27,12 @@ impl FindTool {
 #[async_trait]
 impl ToolRuntime for FindTool {
     fn name(&self) -> &str {
-        "find"
+        "find_files"
     }
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
-            "find",
+            "find_files",
             "Recursively find files or directories matching a glob pattern inside the workspace.",
             json!({
                 "type": "object",
@@ -123,12 +123,12 @@ impl ListTool {
 #[async_trait]
 impl ToolRuntime for ListTool {
     fn name(&self) -> &str {
-        "list_dir"
+        "list_directory"
     }
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
-            "list_dir",
+            "list_directory",
             "List the immediate contents of a directory in the workspace. Shows files and sub-directories.",
             json!({
                 "type": "object",
@@ -177,7 +177,7 @@ impl ToolRuntime for ListTool {
 
         if !meta.is_dir() {
             return Err(ToolError::InvalidArguments(format!(
-                "'{sub_path}' is a file, not a directory — use file_read to read it"
+                "'{sub_path}' is a file, not a directory — use read_file to read it"
             )));
         }
 
@@ -323,7 +323,7 @@ mod tests {
     async fn find_matches_glob_pattern() {
         let dir = setup();
         let tool = FindTool::new(dir.path());
-        let call = ToolCall::new("c1", "find", r#"{"pattern":"*.rs"}"#);
+        let call = ToolCall::new("c1", "find_files", r#"{"pattern":"*.rs"}"#);
         let result = tool.execute(&call).await.unwrap();
         let output = result.content.as_str();
         assert!(output.contains("main.rs"), "got: {output}");
@@ -336,7 +336,7 @@ mod tests {
     async fn find_scoped_to_sub_path() {
         let dir = setup();
         let tool = FindTool::new(dir.path());
-        let call = ToolCall::new("c2", "find", r#"{"path":"src","pattern":"*.rs"}"#);
+        let call = ToolCall::new("c2", "find_files", r#"{"path":"src","pattern":"*.rs"}"#);
         let result = tool.execute(&call).await.unwrap();
         let output = result.content.as_str();
         assert!(output.contains("helper.rs"), "got: {output}");
@@ -347,7 +347,7 @@ mod tests {
     async fn find_no_matches_returns_no_matches() {
         let dir = setup();
         let tool = FindTool::new(dir.path());
-        let call = ToolCall::new("c3", "find", r#"{"pattern":"*.py"}"#);
+        let call = ToolCall::new("c3", "find_files", r#"{"pattern":"*.py"}"#);
         let result = tool.execute(&call).await.unwrap();
         assert_eq!(result.content.as_str(), "(no matches)");
     }
@@ -356,7 +356,7 @@ mod tests {
     async fn find_rejects_path_traversal() {
         let dir = setup();
         let tool = FindTool::new(dir.path());
-        let call = ToolCall::new("c4", "find", r#"{"path":"../","pattern":"*"}"#);
+        let call = ToolCall::new("c4", "find_files", r#"{"path":"../","pattern":"*"}"#);
         let err = tool.execute(&call).await.unwrap_err();
         assert!(matches!(err, ToolError::Unauthorized(_)), "got: {err:?}");
     }
@@ -365,7 +365,7 @@ mod tests {
     async fn find_missing_pattern_returns_invalid_arguments() {
         let dir = setup();
         let tool = FindTool::new(dir.path());
-        let call = ToolCall::new("c5", "find", r#"{"path":"."}"#);
+        let call = ToolCall::new("c5", "find_files", r#"{"path":"."}"#);
         let err = tool.execute(&call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),
@@ -378,7 +378,7 @@ mod tests {
         let dir = setup();
         let tool = FindTool::new(dir.path());
         // max_depth=0 — only root-level files matched, no recursion into subdirs.
-        let call = ToolCall::new("c6", "find", r#"{"pattern":"*.rs","max_depth":0}"#);
+        let call = ToolCall::new("c6", "find_files", r#"{"pattern":"*.rs","max_depth":0}"#);
         let result = tool.execute(&call).await.unwrap();
         let output = result.content.as_str();
         assert!(output.contains("main.rs"), "got: {output}");
@@ -391,7 +391,7 @@ mod tests {
     async fn list_root_shows_entries() {
         let dir = setup();
         let tool = ListTool::new(dir.path());
-        let call = ToolCall::new("l1", "list_dir", r#"{}"#);
+        let call = ToolCall::new("l1", "list_directory", r#"{}"#);
         let result = tool.execute(&call).await.unwrap();
         let output = result.content.as_str();
         assert!(output.contains("[file] main.rs"), "got: {output}");
@@ -404,7 +404,7 @@ mod tests {
     async fn list_sub_directory() {
         let dir = setup();
         let tool = ListTool::new(dir.path());
-        let call = ToolCall::new("l2", "list_dir", r#"{"path":"src"}"#);
+        let call = ToolCall::new("l2", "list_directory", r#"{"path":"src"}"#);
         let result = tool.execute(&call).await.unwrap();
         let output = result.content.as_str();
         assert!(output.contains("[file] helper.rs"), "got: {output}");
@@ -415,7 +415,7 @@ mod tests {
     async fn list_rejects_path_traversal() {
         let dir = setup();
         let tool = ListTool::new(dir.path());
-        let call = ToolCall::new("l3", "list_dir", r#"{"path":".."}"#);
+        let call = ToolCall::new("l3", "list_directory", r#"{"path":".."}"#);
         let err = tool.execute(&call).await.unwrap_err();
         assert!(matches!(err, ToolError::Unauthorized(_)), "got: {err:?}");
     }
@@ -424,7 +424,7 @@ mod tests {
     async fn list_file_returns_invalid_arguments() {
         let dir = setup();
         let tool = ListTool::new(dir.path());
-        let call = ToolCall::new("l4", "list_dir", r#"{"path":"main.rs"}"#);
+        let call = ToolCall::new("l4", "list_directory", r#"{"path":"main.rs"}"#);
         let err = tool.execute(&call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),
@@ -436,7 +436,7 @@ mod tests {
     async fn list_missing_path_returns_not_found() {
         let dir = setup();
         let tool = ListTool::new(dir.path());
-        let call = ToolCall::new("l5", "list_dir", r#"{"path":"nonexistent"}"#);
+        let call = ToolCall::new("l5", "list_directory", r#"{"path":"nonexistent"}"#);
         let err = tool.execute(&call).await.unwrap_err();
         assert!(matches!(err, ToolError::NotFound(_)), "got: {err:?}");
     }

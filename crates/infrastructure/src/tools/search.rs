@@ -9,12 +9,12 @@ use domain::ports::tool_runtime::ToolRuntime;
 ///
 /// Runs under a 10-second timeout enforced by `ToolExecutor`; the process
 /// itself is spawned via `tokio::process::Command` so it is cancellation-safe.
-pub struct SearchTool {
+pub struct SearchFilesTool {
     workspace_root: PathBuf,
     ripgrep_bin: String,
 }
 
-impl SearchTool {
+impl SearchFilesTool {
     pub fn new(workspace_root: impl Into<PathBuf>, ripgrep_bin: impl Into<String>) -> Self {
         Self {
             workspace_root: workspace_root.into(),
@@ -24,14 +24,14 @@ impl SearchTool {
 }
 
 #[async_trait]
-impl ToolRuntime for SearchTool {
+impl ToolRuntime for SearchFilesTool {
     fn name(&self) -> &str {
-        "search"
+        "search_files"
     }
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::function(
-            "search",
+            "search_files",
             "Search for a text pattern across files in the workspace using ripgrep.",
             json!({
                 "type": "object",
@@ -103,21 +103,21 @@ mod tests {
             .is_ok()
     }
 
-    fn setup(content: &str) -> (TempDir, SearchTool) {
+    fn setup(content: &str) -> (TempDir, SearchFilesTool) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.txt"), content).unwrap();
-        let tool = SearchTool::new(dir.path(), "rg");
+        let tool = SearchFilesTool::new(dir.path(), "rg");
         (dir, tool)
     }
 
     fn call(query: &str) -> ToolCall {
-        ToolCall::new("call_s", "search", format!(r#"{{"query":"{query}"}}"#))
+        ToolCall::new("call_s", "search_files", format!(r#"{{"query":"{query}"}}"#))
     }
 
     fn call_with_path(query: &str, path: &str) -> ToolCall {
         ToolCall::new(
             "call_sp",
-            "search",
+            "search_files",
             format!(r#"{{"query":"{query}","path":"{path}"}}"#),
         )
     }
@@ -148,7 +148,7 @@ mod tests {
     #[tokio::test]
     async fn returns_invalid_arguments_when_query_missing() {
         let (_dir, tool) = setup("content");
-        let bad_call = ToolCall::new("cb", "search", r#"{}"#);
+        let bad_call = ToolCall::new("cb", "search_files", r#"{}"#);
         let err = tool.execute(&bad_call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),
@@ -159,7 +159,7 @@ mod tests {
     #[tokio::test]
     async fn returns_invalid_arguments_on_bad_json() {
         let (_dir, tool) = setup("content");
-        let bad_call = ToolCall::new("cb2", "search", "not json");
+        let bad_call = ToolCall::new("cb2", "search_files", "not json");
         let err = tool.execute(&bad_call).await.unwrap_err();
         assert!(
             matches!(err, ToolError::InvalidArguments(_)),
@@ -177,7 +177,7 @@ mod tests {
         std::fs::write(dir.path().join("sub/match.txt"), "target line").unwrap();
         std::fs::write(dir.path().join("other.txt"), "other content").unwrap();
 
-        let tool = SearchTool::new(dir.path(), "rg");
+        let tool = SearchFilesTool::new(dir.path(), "rg");
         let result = tool
             .execute(&call_with_path("target", "sub"))
             .await
@@ -189,7 +189,7 @@ mod tests {
     #[tokio::test]
     async fn missing_rg_binary_returns_execution_failed() {
         let dir = tempfile::tempdir().unwrap();
-        let tool = SearchTool::new(dir.path(), "/nonexistent/rg_binary_xyz");
+        let tool = SearchFilesTool::new(dir.path(), "/nonexistent/rg_binary_xyz");
         let c = call("anything");
         let err = tool.execute(&c).await.unwrap_err();
         assert!(matches!(err, ToolError::ExecutionFailed(_)), "got: {err:?}");

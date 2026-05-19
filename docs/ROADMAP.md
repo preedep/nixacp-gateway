@@ -61,7 +61,9 @@ src/main.rs  |  gateway.toml
 **Deliverables:**
 - `domain/ports`: `TokenCounter`, `ContextCompressor` traits
 - `infrastructure/token_counter`: `TiktokenCounter` — `cl100k_base`, `OnceLock<Arc<CoreBPE>>` at startup (never per-request)
-- `application/prompt`: `PromptPipeline`, `SystemPromptBuilder`, `ModelQuirksTransformer` (strip Qwen `<|im_start|>`, DeepSeek `<think>` leakage)
+- `application/prompt`: `PromptPipeline`, `SystemPromptBuilder`, `ModelAdapterRegistry`, `ModelQuirksTransformer` (strip Qwen `<|im_start|>`, DeepSeek `<think>` leakage)
+- `domain/ports`: `ModelAdapter` trait — per-model plugin for content cleaning, tool instructions, `max_tokens` floor
+- `infrastructure/adapters`: `QwenAdapter`, `DeepSeekAdapter`, `DefaultAdapter` — built-in `ModelAdapter` implementations
 - `application/compression`: `CompressionService`, `SlidingWindowCompressor`
 - Pipeline + compression wired into `ChatService.prepare()` before every backend call
 - Real token counting wired into `complete()` (prompt_tokens + completion_tokens)
@@ -206,18 +208,31 @@ src/main.rs  |  gateway.toml
 ## Phase 7a — Native Tools Expansion ⚙️ IN PROGRESS
 
 **Duration:** Weeks 14–15 | **Perf:** none (correctness only)  
-**Decision:** [ADR-003](architecture/adr-003-tool-strategy-native-plus-mcp.md)
+**Decision:** [ADR-003](architecture/adr-003-tool-strategy-native-plus-mcp.md), [ADR-004](architecture/adr-004-tool-naming-convention.md)
 
 **Entry criteria:** Phase 6 exit criteria met.
 
 **Deliverables:**
 
+*Tool rename (ADR-004 — verb_noun convention):*
+- `file_read` → `read_file` ✅
+- `search` → `search_files` ✅
+- `find` → `find_files` ✅
+- `list_dir` → `list_directory` ✅
+
 *New native tools:*
-- `infrastructure/tools/find.rs` — `FindTool` ✅: recursive file search by glob pattern with workspace confinement; `max_depth` support
-- `infrastructure/tools/find.rs` — `ListTool` ✅: immediate directory listing, `[dir]/[file]` prefixes, sorted output
-- `infrastructure/tools/file_write.rs` — `FileWriteTool`: create or overwrite a file inside workspace root; rejects paths outside workspace via `canonicalize`
-- `infrastructure/tools/file_edit.rs` — `FileEditTool`: apply a unified diff patch to an existing file; uses `similar` crate for patch application
+- `infrastructure/tools/find.rs` — `FindTool` (`find_files`) ✅: recursive file search by glob pattern with workspace confinement; `max_depth` support
+- `infrastructure/tools/find.rs` — `ListTool` (`list_directory`) ✅: immediate directory listing, `[dir]/[file]` prefixes, sorted output
+- `infrastructure/tools/write_file.rs` — `WriteFileTool` (`write_file`) ✅: create or overwrite a file inside workspace root; creates parent directories; rejects paths outside workspace via `canonicalize`
+- `infrastructure/tools/patch_file.rs` — `PatchFileTool` (`patch_file`) ✅: str_replace — find unique `old_str`, replace with `new_str`; errors if not found or ambiguous
 - `infrastructure/tools/bash.rs` — `BashTool`: allowlist-only shell execution; denies `;`, `|`, `&&`, `||`, `>`, `<`, `` ` ``, `$(...)`; 30-second timeout; working directory locked to workspace root
+
+*ModelAdapter plugin system (completed as part of 7a):*
+- `domain/ports/model_adapter.rs` — `ModelAdapter` trait: `matches()`, `clean_content()`, `tool_instructions()`, `tool_max_tokens()` ✅
+- `infrastructure/adapters/qwen.rs` — `QwenAdapter`: strips `<|im_start|>`/`<|im_end|>`, Qwen-specific tool instructions ✅
+- `infrastructure/adapters/deepseek.rs` — `DeepSeekAdapter`: strips `<think>…</think>` blocks, DeepSeek-specific tool instructions ✅
+- `infrastructure/adapters/default.rs` — `DefaultAdapter`: no-op cleaning, generic tool instructions ✅
+- `application/prompt/adapter_registry.rs` — `ModelAdapterRegistry`: dispatches by model name prefix; `ModelQuirksTransformer` and `SystemPromptBuilder` now delegate to registry ✅
 
 *Tool infrastructure (completed as part of 7a):*
 - `domain/ports/tool_runtime.rs` — `ToolRuntime::definition()` ✅: every tool advertises its own JSON Schema; gateway injects all tool definitions on every request (Zed-sent tools ignored)
@@ -229,7 +244,7 @@ src/main.rs  |  gateway.toml
 - `src/main.rs` — `GATEWAY_WORKSPACE_ROOT` env var ✅: figment config now correctly maps `GATEWAY_WORKSPACE_ROOT` → `workspace_root` (was broken by `split("_")` mapping it to nested key `workspace.root`); startup log confirms active workspace root
 - `infrastructure/tools/normalizer.rs` — Priority 5 format ✅: added `{"function_name":...,"function_arg":{...}}` detection; some Qwen2.5-coder variants emit this non-standard format instead of `{"name":...,"arguments":...}`
 - `api/openai/chat.rs` — `max_tokens` floor ✅: tool-loop requests always use at least 4096 tokens (Ollama default was 128, enough for ~2 lines only)
-- `application/tool_loop/mod.rs` — file_read fallback ✅: when model's final response is shorter than the file content it read, raw file content is appended automatically; model summarisation no longer loses file data
+- `application/tool_loop/mod.rs` — read_file fallback ✅: when model's final response is shorter than the file content it read, raw file content is appended automatically; model summarisation no longer loses file data
 - `api/state.rs` — system prompt ✅: explicit correct tool-call JSON format shown; wrong `function_name` format forbidden by name; rule to reproduce complete tool output added
 
 *Two-registry plumbing:*
@@ -241,31 +256,32 @@ src/main.rs  |  gateway.toml
 - `api/state.rs`: parse `ToolsConfig`, wire `BashTool` only when `enabled = true`
 
 *Tests:*
-- Unit tests for each new tool: path traversal rejection, allowlist enforcement, diff apply ✅ (15 tests for FindTool/ListTool)
-- Integration test `tests/native_tools.rs`: write → read → bash loop via Axum router + wiremock
+- Unit tests for each new tool: path traversal rejection, allowlist enforcement ✅ (15 tests FindTool/ListTool, 7 WriteFileTool, 7 PatchFileTool)
+- Integration test `tests/native_tools.rs`: write → read → patch loop via Axum router + wiremock
 
 **Key files:**
 ```
-crates/infrastructure/src/tools/{find,file_write,file_edit,bash}.rs
+crates/infrastructure/src/tools/{find,write_file,patch_file,bash}.rs
 crates/domain/src/ports/tool_runtime.rs
 crates/application/src/tool_loop/mod.rs
 gateway.toml
 crates/api/tests/native_tools.rs
+docs/architecture/adr-004-tool-naming-convention.md
 ```
 
 **Exit criteria:**
-- `FindTool` returns `ToolError::Unauthorized` on paths outside workspace ✅
-- `ListTool` returns `ToolError::Unauthorized` on paths outside workspace ✅
+- `find_files` returns `ToolError::Unauthorized` on paths outside workspace ✅
+- `list_directory` returns `ToolError::Unauthorized` on paths outside workspace ✅
 - Tool loop response streamed as SSE to Zed ✅
 - `workspace_root` configurable in `gateway.toml` ✅
 - `GATEWAY_WORKSPACE_ROOT` env var correctly overrides `workspace_root` at runtime ✅
 - Tool definitions injected with system prompt visible to model (Zed system message preserved + appended) ✅
-- Zed agent chat: `list_dir` tool executes and returns directory listing end-to-end ✅
-- Zed agent chat: `file_read` returns complete file contents end-to-end ✅
-- `FileWriteTool` creates and overwrites files; rejects `../` traversal
-- `FileEditTool` applies a valid unified diff; returns error on malformed patch
+- Zed agent chat: `list_directory` tool executes and returns directory listing end-to-end ✅
+- Zed agent chat: `read_file` returns complete file contents end-to-end ✅
+- `write_file` creates and overwrites files; rejects `../` traversal ✅
+- `patch_file` applies str_replace; errors on old_str not found or ambiguous ✅
 - `BashTool` executes `cargo --version`; rejects `rm -rf /` and `cat /etc/passwd | grep root`
-- `cargo test --workspace` passes (0 warnings) ✅ (175 tests)
+- `cargo test --workspace` passes (0 warnings) ✅ (193 tests)
 
 ---
 

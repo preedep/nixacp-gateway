@@ -37,7 +37,7 @@ nixacp-gateway/
 │   │       ├── chat.rs         # ChatService — prompt pipeline + compression + backend call
 │   │       ├── tool_loop/      # ToolLoopOrchestrator — detect→dispatch→inject→resubmit (max 5)
 │   │       ├── compression/    # CompressionService, SlidingWindowCompressor
-│   │       ├── prompt/         # PromptPipeline, SystemPromptBuilder, ModelQuirksTransformer
+│   │       ├── prompt/         # PromptPipeline, SystemPromptBuilder, ModelAdapterRegistry, ModelQuirksTransformer
 │   │       ├── routing/        # multi-model router (Phase 4+) — not yet built
 │   │       └── reflection/     # ReflectionOrchestrator — quality check + retry, Semaphore(20)
 │   ├── infrastructure/         # implements domain ports
@@ -47,7 +47,9 @@ nixacp-gateway/
 │   │       ├── openai/         # OpenAI-compat passthrough (Phase 7)
 │   │       ├── acp/            # AcpSessionStore — DashMap + broadcast channel + 30-min TTL (Phase 5)
 │   │       └── tools/          # ToolRegistry, ToolExecutor, ToolCallNormalizer,
-│   │                           #   FileReadTool, SearchTool, FindTool, ListTool
+│   │                           #   ReadFileTool, SearchFilesTool, FindTool, ListTool,
+│   │                           #   WriteFileTool, PatchFileTool
+│   │                           # adapters/ — QwenAdapter, DeepSeekAdapter, DefaultAdapter (ModelAdapter impls)
 │   ├── api/                    # HTTP server, Axum router
 │   │   └── src/
 │   │       ├── openai/         # /v1/chat/completions (tools + streaming), /v1/models
@@ -89,6 +91,7 @@ nixacp-gateway/
 - **Reflection retry** — if a response fails a quality check (e.g., malformed tool call, incomplete code), re-submit with reflection prompt; max retries configurable
 - **Context compression** — sliding window + summarization to fit context within model's token limit; pluggable strategy via trait
 - **Prompt optimization** — transform user prompts for coding tasks (add language hints, strip noise, inject system context)
+- **ModelAdapter** — per-model plugin trait (`domain/ports/model_adapter.rs`); controls content cleaning, tool-call instruction style, and `max_tokens` floor; built-in adapters: `QwenAdapter`, `DeepSeekAdapter`, `DefaultAdapter`; add a new LLM by implementing the trait in `infrastructure/adapters/`
 - **Local-first** — Ollama is the primary backend; no cloud dependency required; enterprise auth optional
 
 ## Development Commands

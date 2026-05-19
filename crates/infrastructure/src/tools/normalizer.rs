@@ -243,13 +243,13 @@ mod tests {
     fn structured_single_tool_call() {
         let msg = structured_msg(vec![OllamaToolCall {
             function: OllamaFunction {
-                name: "file_read".to_owned(),
+                name: "read_file".to_owned(),
                 arguments: json!({"path": "src/main.rs"}),
             },
         }]);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].function.name, "file_read");
+        assert_eq!(calls[0].function.name, "read_file");
         let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
         assert_eq!(args["path"], "src/main.rs");
     }
@@ -259,21 +259,21 @@ mod tests {
         let msg = structured_msg(vec![
             OllamaToolCall {
                 function: OllamaFunction {
-                    name: "file_read".to_owned(),
+                    name: "read_file".to_owned(),
                     arguments: json!({"path": "a.rs"}),
                 },
             },
             OllamaToolCall {
                 function: OllamaFunction {
-                    name: "search".to_owned(),
+                    name: "search_files".to_owned(),
                     arguments: json!({"query": "async fn"}),
                 },
             },
         ]);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].function.name, "file_read");
-        assert_eq!(calls[1].function.name, "search");
+        assert_eq!(calls[0].function.name, "read_file");
+        assert_eq!(calls[1].function.name, "search_files");
     }
 
     #[test]
@@ -313,11 +313,11 @@ mod tests {
     #[test]
     fn qwen_xml_single_call() {
         let content =
-            r#"<tool_call>{"name":"file_read","arguments":{"path":"src/lib.rs"}}</tool_call>"#;
+            r#"<tool_call>{"name":"read_file","arguments":{"path":"src/lib.rs"}}</tool_call>"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].function.name, "file_read");
+        assert_eq!(calls[0].function.name, "read_file");
         let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
         assert_eq!(args["path"], "src/lib.rs");
     }
@@ -325,13 +325,13 @@ mod tests {
     #[test]
     fn qwen_xml_multiple_calls() {
         let content = concat!(
-            r#"<tool_call>{"name":"file_read","arguments":{"path":"a.rs"}}</tool_call>"#,
+            r#"<tool_call>{"name":"read_file","arguments":{"path":"a.rs"}}</tool_call>"#,
             r#"<tool_call>{"name":"search","arguments":{"query":"todo"}}</tool_call>"#,
         );
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].function.name, "file_read");
+        assert_eq!(calls[0].function.name, "read_file");
         assert_eq!(calls[1].function.name, "search");
     }
 
@@ -339,7 +339,7 @@ mod tests {
     fn qwen_xml_arguments_as_string() {
         // Some Qwen variants emit arguments as a pre-serialized JSON string.
         let content =
-            r#"<tool_call>{"name":"file_read","arguments":"{\"path\":\"a.rs\"}"}</tool_call>"#;
+            r#"<tool_call>{"name":"read_file","arguments":"{\"path\":\"a.rs\"}"}</tool_call>"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn qwen_xml_unclosed_tag_returns_error() {
-        let content = r#"<tool_call>{"name":"file_read","arguments":{}}"#; // no closing tag
+        let content = r#"<tool_call>{"name":"read_file","arguments":{}}"#; // no closing tag
         let msg = plain_msg(content);
         let err = ToolCallNormalizer::normalize(&msg).unwrap_err();
         assert!(matches!(err, BackendError::StreamParse(_)));
@@ -387,14 +387,14 @@ mod tests {
     #[test]
     fn deepseek_markdown_multiple_calls() {
         let content = concat!(
-            "```json\n{\"name\":\"file_read\",\"arguments\":{\"path\":\"a.rs\"}}\n```\n",
-            "```json\n{\"name\":\"search\",\"arguments\":{\"query\":\"TODO\"}}\n```",
+            "```json\n{\"name\":\"read_file\",\"arguments\":{\"path\":\"a.rs\"}}\n```\n",
+            "```json\n{\"name\":\"search_files\",\"arguments\":{\"query\":\"TODO\"}}\n```",
         );
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].function.name, "file_read");
-        assert_eq!(calls[1].function.name, "search");
+        assert_eq!(calls[0].function.name, "read_file");
+        assert_eq!(calls[1].function.name, "search_files");
     }
 
     #[test]
@@ -418,11 +418,11 @@ mod tests {
 
     #[test]
     fn bare_json_single_call() {
-        let content = "{\n  \"name\": \"file_read\",\n  \"arguments\": {\n    \"path\": \"gateway.toml\"\n  }\n}";
+        let content = "{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"gateway.toml\"\n  }\n}";
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].function.name, "file_read");
+        assert_eq!(calls[0].function.name, "read_file");
         let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
         assert_eq!(args["path"], "gateway.toml");
     }
@@ -490,29 +490,29 @@ mod tests {
 
     #[test]
     fn function_name_format_single_call() {
-        let content = r#"{"function_name":"file_read","function_arg":{"path":"README.md"}}"#;
+        let content = r#"{"function_name":"read_file","function_arg":{"path":"README.md"}}"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].function.name, "file_read");
+        assert_eq!(calls[0].function.name, "read_file");
         let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
         assert_eq!(args["path"], "README.md");
     }
 
     #[test]
     fn function_name_format_list_dir() {
-        let content = r#"{"function_name":"list_dir","function_arg":{"path":"."}}"#;
+        let content = r#"{"function_name":"list_directory","function_arg":{"path":"."}}"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
-        assert_eq!(calls[0].function.name, "list_dir");
+        assert_eq!(calls[0].function.name, "list_directory");
     }
 
     #[test]
     fn function_name_without_function_arg_returns_empty_args() {
-        let content = r#"{"function_name":"list_dir","function_arg":{}}"#;
+        let content = r#"{"function_name":"list_directory","function_arg":{}}"#;
         let msg = plain_msg(content);
         let calls = ToolCallNormalizer::normalize(&msg).unwrap().unwrap();
-        assert_eq!(calls[0].function.name, "list_dir");
+        assert_eq!(calls[0].function.name, "list_directory");
         assert_eq!(calls[0].function.arguments, "{}");
     }
 }

@@ -124,7 +124,7 @@ mod tests {
             tools: Some(vec![OllamaTool {
                 kind: "function".to_owned(),
                 function: OllamaToolFunction {
-                    name: "file_read".to_owned(),
+                    name: "read_file".to_owned(),
                     description: "Read a file".to_owned(),
                     parameters: json!({ "type": "object" }),
                 },
@@ -132,7 +132,7 @@ mod tests {
         };
         let v: serde_json::Value = serde_json::to_value(&req).unwrap();
         assert_eq!(v["tools"][0]["type"], "function");
-        assert_eq!(v["tools"][0]["function"]["name"], "file_read");
+        assert_eq!(v["tools"][0]["function"]["name"], "read_file");
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
             "message":{
                 "role":"assistant",
                 "content":"",
-                "tool_calls":[{"function":{"name":"file_read","arguments":{"path":"src/main.rs"}}}]
+                "tool_calls":[{"function":{"name":"read_file","arguments":{"path":"src/main.rs"}}}]
             },
             "done":true,
             "done_reason":"stop"
@@ -167,7 +167,7 @@ mod tests {
         let chunk: OllamaChatChunk = serde_json::from_str(json).unwrap();
         let tool_calls = chunk.message.tool_calls.unwrap();
         assert_eq!(tool_calls.len(), 1);
-        assert_eq!(tool_calls[0].function.name, "file_read");
+        assert_eq!(tool_calls[0].function.name, "read_file");
         assert_eq!(tool_calls[0].function.arguments["path"], "src/main.rs");
     }
 

@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn domain_messages_serializes_tool_calls_on_assistant_message() {
-        let call = ToolCall::new("call_1", "list_dir", r#"{"path":"."}"#);
+        let call = ToolCall::new("call_1", "list_directory", r#"{"path":"."}"#);
         let msg = Message::assistant_with_tool_calls(vec![call]);
         let req = req_with_messages(vec![msg]);
 
@@ -369,7 +369,7 @@ mod tests {
             .as_ref()
             .expect("tool_calls must be set");
         assert_eq!(tool_calls.len(), 1);
-        assert_eq!(tool_calls[0].function.name, "list_dir");
+        assert_eq!(tool_calls[0].function.name, "list_directory");
         assert_eq!(tool_calls[0].function.arguments["path"], ".");
     }
 

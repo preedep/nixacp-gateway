@@ -118,7 +118,7 @@ fn openai_request_body() -> Value {
             {
                 "type": "function",
                 "function": {
-                    "name": "file_read",
+                    "name": "read_file",
                     "description": "Read a file from the workspace",
                     "parameters": {
                         "type": "object",
@@ -132,7 +132,7 @@ fn openai_request_body() -> Value {
             {
                 "type": "function",
                 "function": {
-                    "name": "search",
+                    "name": "search_files",
                     "description": "Search for text in the workspace",
                     "parameters": {
                         "type": "object",
@@ -171,7 +171,7 @@ async fn three_turn_tool_loop_returns_final_answer() {
         .and(path("/api/chat"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_string(ollama_tool_call_body("search", json!({"query": "fn main"}))),
+                .set_body_string(ollama_tool_call_body("search_files", json!({"query": "fn main"}))),
         )
         .up_to_n_times(1)
         .mount(&mock_server)
@@ -287,7 +287,7 @@ async fn tool_loop_returns_tool_calls_when_max_passes_exhausted() {
         .and(path("/api/chat"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_string(ollama_tool_call_body("file_read", json!({"path": "x.rs"}))),
+                .set_body_string(ollama_tool_call_body("read_file", json!({"path": "x.rs"}))),
         )
         .mount(&mock_server)
         .await;
@@ -303,7 +303,7 @@ async fn tool_loop_returns_tool_calls_when_max_passes_exhausted() {
         "tools": [{
             "type": "function",
             "function": {
-                "name": "file_read",
+                "name": "read_file",
                 "description": "Read",
                 "parameters": { "type": "object" }
             }

@@ -116,7 +116,7 @@ impl ToolLoopOrchestrator {
             // Track file_read results (successful only) for the fallback append.
             last_file_read_result = None;
             for (call, result) in tool_calls.iter().zip(results.iter()) {
-                if call.function.name == "file_read" {
+                if call.function.name == "read_file" {
                     if let domain::entities::tool::ToolResultContent::Text(ref text) =
                         result.content
                     {
@@ -261,18 +261,22 @@ mod tests {
     #[tokio::test]
     async fn single_tool_call_one_pass() {
         let call = ToolCall::new("c1", "read_file", r#"{"path":"a.rs"}"#);
+        // Final response is longer than tool output so the read_file fallback does not fire.
         let backend = Arc::new(FakeBackend::new(vec![
             tool_call_response(vec![call.clone()]),
-            plain_response("file was read"),
+            plain_response("file was read — it defines the main entry point of the application"),
         ]));
         let tool: Arc<dyn ToolRuntime> = Arc::new(FakeTool {
             tool_name: "read_file",
-            output: "contents of a.rs",
+            output: "fn main() {}",
         });
         let orch = ToolLoopOrchestrator::new(backend, vec![tool]);
 
         let resp = orch.run(base_request()).await.unwrap();
-        assert_eq!(resp.content, "file was read");
+        assert_eq!(
+            resp.content,
+            "file was read — it defines the main entry point of the application"
+        );
     }
 
     #[tokio::test]
@@ -297,26 +301,30 @@ mod tests {
     async fn multiple_tool_calls_dispatched_concurrently() {
         let calls = vec![
             ToolCall::new("c1", "read_file", r#"{"path":"a.rs"}"#),
-            ToolCall::new("c2", "search", r#"{"query":"fn main"}"#),
+            ToolCall::new("c2", "search_files", r#"{"query":"fn main"}"#),
         ];
+        // Final response longer than read_file output so the fallback append does not fire.
         let backend = Arc::new(FakeBackend::new(vec![
             tool_call_response(calls),
-            plain_response("both done"),
+            plain_response("both tools completed — the file and search results were processed"),
         ]));
         let tools: Vec<Arc<dyn ToolRuntime>> = vec![
             Arc::new(FakeTool {
                 tool_name: "read_file",
-                output: "file contents",
+                output: "fn x() {}",
             }),
             Arc::new(FakeTool {
-                tool_name: "search",
-                output: "search results",
+                tool_name: "search_files",
+                output: "src/lib.rs:1",
             }),
         ];
         let orch = ToolLoopOrchestrator::new(backend, tools);
 
         let resp = orch.run(base_request()).await.unwrap();
-        assert_eq!(resp.content, "both done");
+        assert_eq!(
+            resp.content,
+            "both tools completed — the file and search results were processed"
+        );
     }
 
     #[tokio::test]
@@ -352,7 +360,7 @@ mod tests {
                 if self.first_call.swap(false, Ordering::SeqCst) {
                     Ok(tool_call_response(vec![
                         ToolCall::new("c1", "read_file", "{}"),
-                        ToolCall::new("c2", "search", "{}"),
+                        ToolCall::new("c2", "search_files", "{}"),
                     ]))
                 } else {
                     *self.captured.lock().unwrap() = req.messages.clone();
@@ -389,7 +397,7 @@ mod tests {
                 output: "file",
             }),
             Arc::new(FakeTool {
-                tool_name: "search",
+                tool_name: "search_files",
                 output: "results",
             }),
         ];

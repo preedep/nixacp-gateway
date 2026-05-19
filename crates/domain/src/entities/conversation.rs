@@ -112,7 +112,7 @@ mod tests {
             content: String::new(),
             prompt_tokens: 0,
             completion_tokens: 0,
-            tool_calls: Some(vec![ToolCall::new("c1", "file_read", r#"{"path":"a.rs"}"#)]),
+            tool_calls: Some(vec![ToolCall::new("c1", "read_file", r#"{"path":"a.rs"}"#)]),
         };
         assert!(resp.is_tool_call());
     }
