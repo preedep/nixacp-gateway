@@ -22,3 +22,10 @@ max_concurrent = 2
 name = "qwen2.5-coder:14b"
 display_name = "Qwen2.5 Coder 14B"
 max_tokens = 16384
+
+[tools.bash]
+# Set enabled = true to give the model access to a restricted shell.
+# Only commands listed in allowlist are permitted.
+# Shell operators (|, ;, &&, ||, >, <, `, $(...)) are always denied.
+enabled = false
+allowlist = ["cargo", "git", "echo", "ls", "cat", "grep", "find", "rg"]

@@ -10,6 +10,7 @@ use infrastructure::acp::AcpSessionStore;
 use infrastructure::adapters::{DeepSeekAdapter, DefaultAdapter, QwenAdapter};
 use infrastructure::ollama::client::{OllamaClient, OllamaClientConfig};
 use infrastructure::token_counter::TiktokenCounter;
+use infrastructure::tools::bash::BashTool;
 use infrastructure::tools::file_read::ReadFileTool;
 use infrastructure::tools::find::{FindTool, ListTool};
 use infrastructure::tools::patch_file::PatchFileTool;
@@ -56,6 +57,33 @@ fn default_log_level() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BashConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bash_allowlist")]
+    pub allowlist: Vec<String>,
+}
+
+fn default_bash_allowlist() -> Vec<String> {
+    vec!["cargo".into(), "git".into(), "echo".into()]
+}
+
+impl Default for BashConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allowlist: default_bash_allowlist(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ToolsConfig {
+    #[serde(default)]
+    pub bash: BashConfig,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub ollama: OllamaConfig,
@@ -63,6 +91,8 @@ pub struct Config {
     pub log: LogConfig,
     #[serde(default = "default_workspace_root")]
     pub workspace_root: String,
+    #[serde(default)]
+    pub tools: ToolsConfig,
 }
 
 fn default_workspace_root() -> String {
@@ -115,7 +145,7 @@ impl AppState {
         let workspace_root = std::path::PathBuf::from(&config.workspace_root);
 
         // Build tools first so we can pass their names to SystemPromptBuilder.
-        let built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
+        let mut built_in_tools: Vec<Arc<dyn ToolRuntime>> = vec![
             Arc::new(ReadFileTool::new(workspace_root.clone())),
             Arc::new(WriteFileTool::new(workspace_root.clone())),
             Arc::new(PatchFileTool::new(workspace_root.clone())),
@@ -123,6 +153,12 @@ impl AppState {
             Arc::new(FindTool::new(workspace_root.clone())),
             Arc::new(ListTool::new(workspace_root.clone())),
         ];
+        if config.tools.bash.enabled {
+            built_in_tools.push(Arc::new(BashTool::new(
+                workspace_root.clone(),
+                config.tools.bash.allowlist.clone(),
+            )));
+        }
         let tool_names: Vec<String> = built_in_tools.iter().map(|t| t.name().to_owned()).collect();
 
         // Model adapter registry — checked in order; DefaultAdapter must be last.

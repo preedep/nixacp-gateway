@@ -39,6 +39,7 @@ fn test_config(ollama_url: &str) -> Config {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned(),
+        tools: Default::default(),
     }
 }
 
